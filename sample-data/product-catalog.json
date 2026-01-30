@@ -1,0 +1,229 @@
+{
+  "products": [
+    {
+      "id": "P001",
+      "name": "ProBook 15 Laptop",
+      "category": "Electronics",
+      "price": 899.99,
+      "in_stock": true,
+      "features": [
+        "15.6-inch Full HD display",
+        "Intel Core i7 processor",
+        "16GB RAM, 512GB SSD",
+        "Backlit keyboard"
+      ]
+    },
+    {
+      "id": "P002",
+      "name": "SoundMax Wireless Headphones",
+      "category": "Electronics",
+      "price": 149.99,
+      "in_stock": true,
+      "features": [
+        "Active noise cancellation",
+        "40-hour battery life",
+        "Bluetooth 5.0"
+      ]
+    },
+    {
+      "id": "P003",
+      "name": "UltraWide 34\" Curved Monitor",
+      "category": "Electronics",
+      "price": 549.99,
+      "in_stock": true,
+      "features": [
+        "3440x1440 resolution",
+        "144Hz refresh rate",
+        "HDR400 certified",
+        "USB-C connectivity"
+      ]
+    },
+    {
+      "id": "P004",
+      "name": "MechType Pro Keyboard",
+      "category": "Electronics",
+      "price": 89.99,
+      "in_stock": true,
+      "features": [
+        "Cherry MX Blue switches",
+        "RGB backlighting",
+        "Aluminum frame"
+      ]
+    },
+    {
+      "id": "P005",
+      "name": "PrecisionGlide Wireless Mouse",
+      "category": "Electronics",
+      "price": 59.99,
+      "in_stock": false,
+      "features": [
+        "16000 DPI sensor",
+        "Ergonomic design",
+        "70-hour battery life",
+        "6 programmable buttons"
+      ]
+    },
+    {
+      "id": "P006",
+      "name": "SpeedRunner Pro Running Shoes",
+      "category": "Sports",
+      "price": 129.99,
+      "in_stock": true,
+      "features": [
+        "Lightweight mesh upper",
+        "Responsive foam cushioning",
+        "Carbon fiber plate"
+      ]
+    },
+    {
+      "id": "P007",
+      "name": "ZenFlow Yoga Mat",
+      "category": "Sports",
+      "price": 45.99,
+      "in_stock": true,
+      "features": [
+        "6mm thick cushioning",
+        "Non-slip surface",
+        "Eco-friendly TPE material",
+        "Carrying strap included"
+      ]
+    },
+    {
+      "id": "P008",
+      "name": "IronGrip Adjustable Dumbbells",
+      "category": "Sports",
+      "price": 349.99,
+      "in_stock": true,
+      "features": [
+        "5-52.5 lbs adjustable weight",
+        "Quick-change dial system",
+        "Compact storage design"
+      ]
+    },
+    {
+      "id": "P009",
+      "name": "HydroMax Insulated Water Bottle",
+      "category": "Sports",
+      "price": 34.99,
+      "in_stock": true,
+      "features": [
+        "32oz capacity",
+        "24-hour cold retention",
+        "BPA-free stainless steel"
+      ]
+    },
+    {
+      "id": "P010",
+      "name": "Classic Fit Cotton T-Shirt",
+      "category": "Clothing",
+      "price": 24.99,
+      "in_stock": true,
+      "features": [
+        "100% organic cotton",
+        "Pre-shrunk fabric",
+        "Available in 8 colors"
+      ]
+    },
+    {
+      "id": "P011",
+      "name": "SlimFlex Stretch Jeans",
+      "category": "Clothing",
+      "price": 79.99,
+      "in_stock": true,
+      "features": [
+        "4-way stretch denim",
+        "Slim fit design",
+        "Reinforced stitching",
+        "5 pocket styling"
+      ]
+    },
+    {
+      "id": "P012",
+      "name": "AllWeather Waterproof Jacket",
+      "category": "Clothing",
+      "price": 189.99,
+      "in_stock": false,
+      "features": [
+        "Waterproof breathable membrane",
+        "Sealed seams",
+        "Adjustable hood"
+      ]
+    },
+    {
+      "id": "P013",
+      "name": "UrbanStep Casual Sneakers",
+      "category": "Clothing",
+      "price": 94.99,
+      "in_stock": true,
+      "features": [
+        "Memory foam insole",
+        "Canvas upper",
+        "Vulcanized rubber sole",
+        "Classic low-top design"
+      ]
+    },
+    {
+      "id": "P014",
+      "name": "TechElite Gaming Laptop",
+      "category": "Electronics",
+      "price": 1299.99,
+      "in_stock": true,
+      "features": [
+        "17.3-inch 240Hz display",
+        "NVIDIA RTX 4070 GPU",
+        "32GB RAM, 1TB NVMe SSD",
+        "Per-key RGB keyboard"
+      ]
+    },
+    {
+      "id": "P015",
+      "name": "FitTrack Smart Watch",
+      "category": "Electronics",
+      "price": 249.99,
+      "in_stock": true,
+      "features": [
+        "Heart rate monitoring",
+        "GPS tracking",
+        "7-day battery life",
+        "Water resistant to 50m"
+      ]
+    },
+    {
+      "id": "P016",
+      "name": "PowerLift Resistance Bands Set",
+      "category": "Sports",
+      "price": 29.99,
+      "in_stock": true,
+      "features": [
+        "5 resistance levels",
+        "Door anchor included",
+        "Carrying bag"
+      ]
+    },
+    {
+      "id": "P017",
+      "name": "Premium Down Winter Jacket",
+      "category": "Clothing",
+      "price": 299.99,
+      "in_stock": false,
+      "features": [
+        "800-fill goose down",
+        "Water-resistant shell",
+        "Packable design",
+        "Rated to -20°F"
+      ]
+    },
+    {
+      "id": "P018",
+      "name": "CompactCam 4K Webcam",
+      "category": "Electronics",
+      "price": 79.99,
+      "in_stock": true,
+      "features": [
+        "4K Ultra HD resolution",
+        "Auto-focus",
+        "Built-in noise-canceling mic"
+      ]
+    }
+  ]
+}

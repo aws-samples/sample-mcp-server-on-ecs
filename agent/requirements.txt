@@ -1,0 +1,17 @@
+# Strands Agent SDK (includes Bedrock support)
+strands-agents>=1.0.0,<2.0.0
+
+# Flask web framework
+flask>=3.1.0,<4.0.0
+
+# AWS SDK for Bedrock access
+boto3>=1.35.0
+
+# MCP client library
+mcp>=1.3.0,<2.0.0
+
+# HTTP requests library
+requests>=2.32.0,<3.0.0
+
+# Environment variable loading (for local testing)
+python-dotenv>=1.0.0,<2.0.0
