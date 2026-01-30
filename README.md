@@ -1,59 +1,75 @@
-# AWS MCP ECS Blog - Product Catalog Search
+# MCP on Amazon ECS with Service Connect
 
-This project demonstrates how to deploy MCP (Model Context Protocol) servers on Amazon ECS Fargate using ECS Service Connect for service-to-service communication.
+Deploy Model Context Protocol (MCP) servers on Amazon ECS Fargate using ECS Service Connect for service-to-service communication.
 
 ## Architecture
 
-The infrastructure includes:
-- VPC with public and private subnets across 2 AZs
-- ECS Cluster with Fargate capacity provider
-- Two ECS services: MCP Server and Agent
+```
+Internet → ALB (Express Mode) → UI Service (Gradio)
+                                    ↓ Service Connect
+                                Agent Service (Strands + Bedrock)
+                                    ↓ Service Connect
+                                MCP Server (FastMCP)
+                                    ↓
+                                S3 Bucket (Product Catalog)
+```
+
+### Components
+- **MCP Server**: FastMCP server providing product catalog search tools
+- **Agent**: Strands agent orchestrating MCP tool calls with Amazon Bedrock
+- **UI**: Gradio web interface for natural language product queries
+
+### AWS Services
+- Amazon ECS Fargate with Service Connect
+- Amazon Bedrock (Nova Lite model)
+- Application Load Balancer (ECS Express Mode)
 - AWS Cloud Map for service discovery
-- S3 bucket for product catalog data
-- ECR repositories for container images
+- Amazon S3 for product data
+- Amazon ECR for container images
+
+## Quick Start
+
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for step-by-step deployment instructions.
+
+**Estimated deployment time:** 25-30 minutes
 
 ## Directory Structure
 
 ```
-aws-mcp-ecs-blog/
-├── README.md
 ├── cloudformation/
-│   └── infrastructure.yaml      # Base infrastructure template
+│   └── infrastructure.yaml      # VPC, ECS cluster, IAM roles, ECR repos
 ├── mcp-server/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   └── app/
-│       └── mcp_server.py
+│   └── app/mcp_server.py        # FastMCP server with S3 integration
 ├── agent/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   └── app/
-│       └── agent.py
+│   └── app/agent.py             # Strands agent with Bedrock
+├── ui/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── app.py                   # Gradio chat interface
 ├── sample-data/
-│   └── product-catalog.json
-├── config/
-│   ├── mcp-server-task-def.json
-│   ├── agent-task-def.json
-│   ├── mcp-server-service-connect.json
-│   └── agent-service-connect.json
+│   └── product-catalog.json     # Sample product data
 └── docs/
-    └── deployment-guide.md
+    ├── QUICKSTART.md            # Deployment guide
+    ├── DEPLOYMENT.md            # Detailed reference
+    └── TROUBLESHOOTING.md       # Common issues and solutions
 ```
 
-## Deployment
+## Prerequisites
 
-1. Deploy the base infrastructure:
-```bash
-aws cloudformation deploy \
-  --template-file cloudformation/infrastructure.yaml \
-  --stack-name mcp-demo-infrastructure \
-  --capabilities CAPABILITY_IAM
-```
+- AWS CLI configured with appropriate permissions
+- Docker with buildx support
+- Amazon Bedrock model access enabled (Nova Lite)
 
-2. Build and push container images to ECR
+## Documentation
 
-3. Deploy ECS services using the task definitions in `config/`
+- [QUICKSTART.md](docs/QUICKSTART.md) - Step-by-step deployment
+- [DEPLOYMENT.md](docs/DEPLOYMENT.md) - Detailed deployment reference
+- [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and fixes
 
 ## License
 
-MIT License
+MIT-0
