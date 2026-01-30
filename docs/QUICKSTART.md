@@ -219,7 +219,7 @@ aws ecs create-express-gateway-service \
   --profile $AWS_PROFILE
 ```
 
-**Step 2:** Wait for service to stabilize (~2 minutes)
+**Step 2:** Wait for service to stabilize (~4 minutes)
 ```bash
 aws ecs wait services-stable \
   --cluster $CLUSTER_NAME \
