@@ -92,6 +92,9 @@ docker buildx build --platform linux/amd64 \
 ## Step 7: Create Service Connect Config Files
 
 ```bash
+# Create config directory
+mkdir -p config
+
 # MCP Server Service Connect
 cat > config/${STACK_NAME}-mcp-server-service-connect.json << EOF
 {
