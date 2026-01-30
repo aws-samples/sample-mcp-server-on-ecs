@@ -35,23 +35,28 @@ aws cloudformation deploy \
 ## Step 3: Get Stack Outputs
 
 ```bash
-# Get all required values from CloudFormation
+# Get AWS Account ID
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile $AWS_PROFILE)
 export ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-export CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`ECSClusterName`].OutputValue' --output text)
-export S3_BUCKET=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text)
-export PRIVATE_SUBNETS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`PrivateSubnetIds`].OutputValue' --output text)
-export PUBLIC_SUBNETS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnetIds`].OutputValue' --output text)
-export MCP_SG=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`MCPServerSecurityGroupId`].OutputValue' --output text)
-export AGENT_SG=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`AgentSecurityGroupId`].OutputValue' --output text)
-export UI_SG=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`UISecurityGroupId`].OutputValue' --output text)
-export EXECUTION_ROLE=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`TaskExecutionRoleArn`].OutputValue' --output text)
-export INFRA_ROLE=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`ECSExpressInfrastructureRoleArn`].OutputValue' --output text)
-export UI_TASK_ROLE=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`UITaskRoleArn`].OutputValue' --output text)
-export UI_ECR=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`UIECRRepositoryUri`].OutputValue' --output text)
-export UI_LOG_GROUP=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs[?OutputKey==`UILogGroupName`].OutputValue' --output text)
 
-# Verify outputs
+# Get all CloudFormation outputs in one call
+OUTPUTS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs')
+
+# Parse outputs into environment variables
+export CLUSTER_NAME=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ECSClusterName") | .OutputValue')
+export S3_BUCKET=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="S3BucketName") | .OutputValue')
+export PRIVATE_SUBNETS=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="PrivateSubnetIds") | .OutputValue')
+export PUBLIC_SUBNETS=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="PublicSubnetIds") | .OutputValue')
+export MCP_SG=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="MCPServerSecurityGroupId") | .OutputValue')
+export AGENT_SG=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="AgentSecurityGroupId") | .OutputValue')
+export UI_SG=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UISecurityGroupId") | .OutputValue')
+export EXECUTION_ROLE=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="TaskExecutionRoleArn") | .OutputValue')
+export INFRA_ROLE=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ECSExpressInfrastructureRoleArn") | .OutputValue')
+export UI_TASK_ROLE=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UITaskRoleArn") | .OutputValue')
+export UI_ECR=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UIECRRepositoryUri") | .OutputValue')
+export UI_LOG_GROUP=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UILogGroupName") | .OutputValue')
+
+# Verify key outputs
 echo "Cluster: $CLUSTER_NAME"
 echo "S3 Bucket: $S3_BUCKET"
 ```
