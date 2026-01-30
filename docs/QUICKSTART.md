@@ -190,8 +190,9 @@ aws ecs create-service \
 ```
 
 ### UI Service (Express Mode)
+
+**Step 1:** Create UI service
 ```bash
-# Step 1: Create UI service with Express Mode (no Service Connect initially)
 aws ecs create-express-gateway-service \
   --cluster $CLUSTER_NAME \
   --service-name ui-service \
@@ -216,8 +217,19 @@ aws ecs create-express-gateway-service \
   --tags key=Project,value=ECS-MCP-Blog \
   --region $AWS_REGION \
   --profile $AWS_PROFILE
+```
 
-# Step 2: Add Service Connect (required for UI to reach Agent)
+**Step 2:** Wait for service to stabilize (~2 minutes)
+```bash
+aws ecs wait services-stable \
+  --cluster $CLUSTER_NAME \
+  --services ui-service \
+  --region $AWS_REGION \
+  --profile $AWS_PROFILE
+```
+
+**Step 3:** Add Service Connect (required for UI to reach Agent)
+```bash
 aws ecs update-service \
   --cluster $CLUSTER_NAME \
   --service ui-service \
