@@ -235,6 +235,10 @@ Resources:
       GroupName: !Sub '${AWS::StackName}-mcp-server-sg'
       GroupDescription: Security group for MCP Server - allows inbound from Agent
       VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+          Description: Allow all outbound traffic
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-mcp-server-sg'
@@ -261,6 +265,10 @@ Resources:
           ToPort: 443
           CidrIp: '0.0.0.0/0'
           Description: Allow inbound HTTPS from internet
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+          Description: Allow all outbound traffic
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-ui-sg'
@@ -276,6 +284,10 @@ Resources:
       GroupName: !Sub '${AWS::StackName}-agent-sg'
       GroupDescription: Security group for Agent - allows inbound from UI
       VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+          Description: Allow all outbound traffic
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-agent-sg'
