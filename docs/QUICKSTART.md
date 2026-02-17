@@ -55,6 +55,7 @@ export INFRA_ROLE=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ECSExpressI
 export UI_TASK_ROLE=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UITaskRoleArn") | .OutputValue')
 export UI_ECR=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UIECRRepositoryUri") | .OutputValue')
 export UI_LOG_GROUP=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UILogGroupName") | .OutputValue')
+export VPC_ID=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="VpcId") | .OutputValue')
 
 # Verify key outputs
 echo "Cluster: $CLUSTER_NAME"
@@ -260,13 +261,17 @@ aws ecs describe-services \
   --query 'services[].[serviceName,status,runningCount,desiredCount]' \
   --output table
 
-# Get UI public URL (wait ~2 minutes for ALB provisioning)
-aws ecs describe-services \
-  --cluster $CLUSTER_NAME \
-  --services ui-service \
-  --region $AWS_REGION \
-  --profile $AWS_PROFILE \
-  --query 'services[0].deployments[0].serviceConnectResources' 
+# Get UI public URL via Express Mode API
+UI_SERVICE_ARN=$(aws ecs describe-services --cluster $CLUSTER_NAME --services ui-service \
+  --region $AWS_REGION --profile $AWS_PROFILE \
+  --query 'services[0].serviceArn' --output text)
+
+UI_ENDPOINT=$(aws ecs describe-express-gateway-service \
+  --service-arn $UI_SERVICE_ARN \
+  --region $AWS_REGION --profile $AWS_PROFILE \
+  --query 'service.activeConfigurations[0].ingressPaths[0].endpoint' --output text)
+
+echo "UI URL: https://${UI_ENDPOINT}/"
 ```
 
 ## Step 10: Test the Application
@@ -287,29 +292,46 @@ aws ecs delete-express-gateway-service --service-arn $UI_SERVICE_ARN --region $A
 aws ecs delete-service --cluster $CLUSTER_NAME --service agent-service --force --region $AWS_REGION --profile $AWS_PROFILE
 aws ecs delete-service --cluster $CLUSTER_NAME --service mcp-server-service --force --region $AWS_REGION --profile $AWS_PROFILE
 
-# Wait for services to drain
-echo "Waiting 90 seconds for services to drain..."
-sleep 90
-
-# Empty S3 bucket
-aws s3 rm s3://$S3_BUCKET --recursive --profile $AWS_PROFILE
-
-# Delete ECR repositories (must delete before CloudFormation)
-aws ecr delete-repository --repository-name ${STACK_NAME}-mcp-server --force --region $AWS_REGION --profile $AWS_PROFILE
-aws ecr delete-repository --repository-name ${STACK_NAME}-agent --force --region $AWS_REGION --profile $AWS_PROFILE
-aws ecr delete-repository --repository-name ${STACK_NAME}-ui --force --region $AWS_REGION --profile $AWS_PROFILE
+# Wait for services to fully drain (Express Mode needs extra time to release ALB and SGs)
+echo "Waiting 120 seconds for services and Express Mode resources to drain..."
+sleep 120
 
 # Delete Express Mode orphan resources (ALB and security groups created at runtime)
-VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=${STACK_NAME}-vpc" --query "Vpcs[0].VpcId" --output text --region $AWS_REGION --profile $AWS_PROFILE)
+# Note: VPC_ID was exported in Step 3 from stack outputs
 
 # Delete orphan ALB in our VPC (if exists)
 ALB_ARN=$(aws elbv2 describe-load-balancers --region $AWS_REGION --profile $AWS_PROFILE --query "LoadBalancers[?VpcId=='${VPC_ID}' && contains(LoadBalancerName, 'ecs-express-gateway')].LoadBalancerArn" --output text)
 [ -n "$ALB_ARN" ] && aws elbv2 delete-load-balancer --load-balancer-arn $ALB_ARN --region $AWS_REGION --profile $AWS_PROFILE && sleep 30
 
-# Delete orphan security groups
-for SG in $(aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC_ID --query "SecurityGroups[?contains(GroupName, 'ecs-express') || contains(GroupName, 'ui-service')].GroupId" --output text --region $AWS_REGION --profile $AWS_PROFILE); do
+# Delete orphan security groups (includes ECS-managed SGs for Express Mode and service-level SGs)
+# Deletes all non-default SGs in the VPC to catch any ECS-created SGs
+for SG in $(aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC_ID --query "SecurityGroups[?GroupName != 'default'].GroupId" --output text --region $AWS_REGION --profile $AWS_PROFILE); do
   aws ec2 delete-security-group --group-id $SG --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
 done
+
+# Empty S3 buckets (including all object versions for versioned buckets)
+aws s3 rm s3://$S3_BUCKET --recursive --profile $AWS_PROFILE
+aws s3api delete-objects --bucket $S3_BUCKET \
+  --delete "$(aws s3api list-object-versions --bucket $S3_BUCKET --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --profile $AWS_PROFILE)" \
+  --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
+aws s3api delete-objects --bucket $S3_BUCKET \
+  --delete "$(aws s3api list-object-versions --bucket $S3_BUCKET --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --profile $AWS_PROFILE)" \
+  --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
+
+# Empty access logs bucket (all versions and delete markers)
+ACCESS_LOGS_BUCKET="${STACK_NAME}-access-logs-${AWS_ACCOUNT_ID}"
+aws s3 rm s3://$ACCESS_LOGS_BUCKET --recursive --profile $AWS_PROFILE 2>/dev/null || true
+aws s3api delete-objects --bucket $ACCESS_LOGS_BUCKET \
+  --delete "$(aws s3api list-object-versions --bucket $ACCESS_LOGS_BUCKET --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --profile $AWS_PROFILE)" \
+  --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
+aws s3api delete-objects --bucket $ACCESS_LOGS_BUCKET \
+  --delete "$(aws s3api list-object-versions --bucket $ACCESS_LOGS_BUCKET --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --profile $AWS_PROFILE)" \
+  --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
+
+# Delete ECR repositories (must delete before CloudFormation)
+aws ecr delete-repository --repository-name ${STACK_NAME}-mcp-server --force --region $AWS_REGION --profile $AWS_PROFILE
+aws ecr delete-repository --repository-name ${STACK_NAME}-agent --force --region $AWS_REGION --profile $AWS_PROFILE
+aws ecr delete-repository --repository-name ${STACK_NAME}-ui --force --region $AWS_REGION --profile $AWS_PROFILE
 
 # Delete CloudFormation stack
 aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE
@@ -324,6 +346,8 @@ done
 ```
 
 > **Note:** Express Mode creates ALB and security groups at runtime that are not managed by CloudFormation. These must be deleted manually before the VPC can be removed.
+
+> **Note:** If the CloudFormation stack deletion fails on the VPC resource (e.g., due to lingering ENIs or dependencies), you can manually delete the VPC from the [VPC console](https://console.aws.amazon.com/vpc/). Navigate to **Your VPCs**, select the VPC tagged with your stack name, and choose **Delete VPC** — this will also clean up associated subnets, route tables, and internet gateways.
 
 ## Troubleshooting
 
