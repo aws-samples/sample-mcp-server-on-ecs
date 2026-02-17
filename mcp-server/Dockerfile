@@ -6,14 +6,6 @@
 FROM python:3.12-slim
 
 # -----------------------------------------------------------------------------
-# Image Metadata
-# -----------------------------------------------------------------------------
-LABEL maintainer="smanubol@amazon.com" \
-      description="MCP Server for Product Catalog Search - Runs on ECS Fargate" \
-      version="1.0" \
-      org.opencontainers.image.source="https://github.com/aws-samples/mcp-ecs-blog"
-
-# -----------------------------------------------------------------------------
 # Set Working Directory
 # -----------------------------------------------------------------------------
 WORKDIR /app
