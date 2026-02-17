@@ -5,6 +5,20 @@ Description: >
   servers on Amazon ECS Fargate with ECS Service Connect for service-to-service communication.
 
 # =============================================================================
+# SECURITY CONTROLS SUMMARY
+# =============================================================================
+# This template implements the following security controls:
+# - KMS Encryption: Customer-managed KMS key for CloudWatch Logs and ECR repos
+# - S3 TLS Enforcement: Bucket policy denying non-HTTPS requests
+# - S3 Access Logging: Dedicated logging bucket for audit trail
+# - S3 Versioning: Enabled on all S3 buckets for data protection
+# - ECR Immutable Tags: Prevents overwriting published container images
+# - IAM Least Privilege: Scoped IAM policies per service role
+# - Network Isolation: VPC with private subnets, security groups per service
+# - Container Insights: ECS cluster monitoring enabled
+# =============================================================================
+
+# =============================================================================
 # RESOURCES
 # =============================================================================
 Resources:
@@ -228,7 +242,7 @@ Resources:
   # SECURITY GROUPS
   # ---------------------------------------------------------------------------
   
-  # Security Group for MCP Server - allows inbound from Agent only
+  # Security Group for MCP Server - allows inbound from Agent only on port 8080, all outbound
   MCPServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -247,7 +261,7 @@ Resources:
         
           
 
-  # Security Group for UI - allows inbound HTTP/HTTPS from internet
+  # Security Group for UI - allows inbound HTTP (80) and HTTPS (443) from internet, all outbound
   UISecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -277,7 +291,7 @@ Resources:
         
           
 
-  # Security Group for Agent - allows inbound from UI Security Group
+  # Security Group for Agent - allows inbound from UI on port 3000, all outbound
   AgentSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -360,6 +374,11 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessLogsBucket
+        LogFilePrefix: catalog-logs/
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-catalog-${AWS::AccountId}'
@@ -367,6 +386,117 @@ Resources:
           Value: ECS-MCP-Blog
         
           
+
+  # Dedicated S3 bucket for audit logging - receives access logs from ProductCatalogBucket
+  AccessLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-access-logs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-access-logs-${AWS::AccountId}'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # Bucket policy granting S3 log delivery service write access to the access logs bucket
+  AccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AccessLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: S3ServerAccessLogsPolicy
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${AccessLogsBucket.Arn}/*'
+            Condition:
+              ArnLike:
+                aws:SourceArn: !GetAtt ProductCatalogBucket.Arn
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  # S3 Bucket Policy enforcing TLS-only access to the ProductCatalogBucket
+  # Denies any request made without HTTPS (aws:SecureTransport: false)
+  ProductCatalogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProductCatalogBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ProductCatalogBucket.Arn
+              - !Sub '${ProductCatalogBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # ---------------------------------------------------------------------------
+  # KMS ENCRYPTION KEY
+  # ---------------------------------------------------------------------------
+
+  # KMS key used for encrypting CloudWatch Logs and ECR repositories
+  # Enables customer-managed encryption for data at rest
+  LogEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'Encryption key for ${AWS::StackName} CloudWatch Logs and ECR repositories'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowAccountAdminAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowCloudWatchLogsEncryption
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - 'kms:Encrypt*'
+              - 'kms:Decrypt*'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:Describe*'
+            Resource: '*'
+            Condition:
+              ArnLike:
+                'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-encryption-key'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # Alias for the KMS key for easier identification
+  LogEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${AWS::StackName}-encryption-key'
+      TargetKeyId: !Ref LogEncryptionKey
 
   # ---------------------------------------------------------------------------
   # SERVICE DISCOVERY (CLOUD MAP)
@@ -396,6 +526,12 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: !Sub '${AWS::StackName}-mcp-server'
+      # KMS encryption for container images at rest
+      EncryptionConfiguration:
+        EncryptionType: KMS
+        KmsKey: !GetAtt LogEncryptionKey.Arn
+      # Immutable tags prevent overwriting published images
+      ImageTagMutability: IMMUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:
@@ -429,6 +565,12 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: !Sub '${AWS::StackName}-agent'
+      # KMS encryption for container images at rest
+      EncryptionConfiguration:
+        EncryptionType: KMS
+        KmsKey: !GetAtt LogEncryptionKey.Arn
+      # Immutable tags prevent overwriting published images
+      ImageTagMutability: IMMUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:
@@ -462,6 +604,12 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: !Sub '${AWS::StackName}-ui'
+      # KMS encryption for container images at rest
+      EncryptionConfiguration:
+        EncryptionType: KMS
+        KmsKey: !GetAtt LogEncryptionKey.Arn
+      # Immutable tags prevent overwriting published images
+      ImageTagMutability: IMMUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:
@@ -513,14 +661,23 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - Effect: Allow
+              - Sid: ECRAuthToken
+                Effect: Allow
                 Action:
                   - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: ECRImagePull
+                Effect: Allow
+                Action:
                   - ecr:BatchCheckLayerAvailability
                   - ecr:GetDownloadUrlForLayer
                   - ecr:BatchGetImage
-                Resource: '*'
-              - Effect: Allow
+                Resource:
+                  - !GetAtt MCPServerECRRepository.Arn
+                  - !GetAtt AgentECRRepository.Arn
+                  - !GetAtt UIECRRepository.Arn
+              - Sid: CloudWatchLogs
+                Effect: Allow
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
@@ -568,6 +725,9 @@ Resources:
                 Action:
                   - servicediscovery:DiscoverInstances
                 Resource: '*'
+                Condition:
+                  StringEquals:
+                    servicediscovery:NamespaceName: !Sub '${AWS::StackName}.local'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-mcp-server-task-role'
@@ -629,6 +789,9 @@ Resources:
                 Action:
                   - servicediscovery:DiscoverInstances
                 Resource: '*'
+                Condition:
+                  StringEquals:
+                    servicediscovery:NamespaceName: !Sub '${AWS::StackName}.local'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-ui-task-role'
@@ -658,6 +821,9 @@ Resources:
                 Action:
                   - servicediscovery:DiscoverInstances
                 Resource: '*'
+                Condition:
+                  StringEquals:
+                    servicediscovery:NamespaceName: !Sub '${AWS::StackName}.local'
         - PolicyName: BedrockAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -692,6 +858,8 @@ Resources:
     Properties:
       LogGroupName: !Sub '/ecs/${AWS::StackName}/mcp-server'
       RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
       Tags:
         - Key: Name
           Value: /ecs/mcp-server
@@ -708,6 +876,8 @@ Resources:
     Properties:
       LogGroupName: !Sub '/ecs/${AWS::StackName}/agent'
       RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
       Tags:
         - Key: Name
           Value: /ecs/agent
@@ -724,6 +894,8 @@ Resources:
     Properties:
       LogGroupName: !Sub '/ecs/${AWS::StackName}/ui'
       RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
       Tags:
         - Key: Name
           Value: /ecs/ui
@@ -740,6 +912,8 @@ Resources:
     Properties:
       LogGroupName: !Sub '/ecs/${AWS::StackName}/mcp-server-service-connect'
       RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
       Tags:
         - Key: Name
           Value: /ecs/mcp-server-service-connect
@@ -756,6 +930,8 @@ Resources:
     Properties:
       LogGroupName: !Sub '/ecs/${AWS::StackName}/agent-service-connect'
       RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
       Tags:
         - Key: Name
           Value: /ecs/agent-service-connect
@@ -772,6 +948,8 @@ Resources:
     Properties:
       LogGroupName: !Sub '/ecs/${AWS::StackName}/ui-service-connect'
       RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
       Tags:
         - Key: Name
           Value: /ecs/ui-service-connect
@@ -921,6 +1099,10 @@ Resources:
 # =============================================================================
 Outputs:
   # Network
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+
   PublicSubnetIds:
     Description: Public Subnet IDs (comma-separated)
     Value: !Join [',', [!Ref PublicSubnet1, !Ref PublicSubnet2]]
