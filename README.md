@@ -70,6 +70,10 @@ See [docs/QUICKSTART.md](docs/QUICKSTART.md) for step-by-step deployment instruc
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md) - Detailed deployment reference
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues and fixes
 
+## Security
+
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
 ## License
 
-MIT-0
+This library is licensed under the MIT-0 License. See the LICENSE file.

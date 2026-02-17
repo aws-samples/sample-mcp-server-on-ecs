@@ -18,3 +18,4 @@ config/*.json
 
 # Logs
 *.log
+scan-report.json
