@@ -1,4 +1,4 @@
-# Troubleshooting Guide: MCP Demo Application on ECS
+# Troubleshooting Guide: MCP on Amazon ECS
 
 This document captures issues encountered during deployment and their solutions.
 
@@ -15,8 +15,8 @@ The Envoy sidecar proxy was not properly intercepting traffic to `agent:3000`. I
 
 1. **Envoy was receiving cluster configuration** - Logs showed `cds: response indicates 2 added/updated cluster(s)` (agent and mcp-server)
 2. **Egress listener was configured** - `lds: add/update listener 'egress'` appeared in logs
-3. **But traffic wasn't being routed** - No connection attempts were visible in Envoy logs
-4. **DNS resolution failing before Envoy** - The iptables rules that should intercept traffic weren't working
+3. **But traffic was not being routed** - No connection attempts were visible in Envoy logs
+4. **DNS resolution failing before Envoy** - The iptables rules that should intercept traffic were not working
 
 ### Solution
 **Trigger a service redeployment** by updating the Service Connect configuration.
@@ -26,13 +26,13 @@ The Envoy sidecar proxy was not properly intercepting traffic to `agent:3000`. I
 ```json
 {
   "enabled": true,
-  "namespace": "mcp-namespace.local",
+  "namespace": "${STACK_NAME}.local",
   "services": [],
   "logConfiguration": {
     "logDriver": "awslogs",
     "options": {
-      "awslogs-group": "/ecs/ui-service-connect",
-      "awslogs-region": "us-west-2",
+      "awslogs-group": "/ecs/${STACK_NAME}/ui-service-connect",
+      "awslogs-region": "${AWS_REGION}",
       "awslogs-stream-prefix": "envoy"
     }
   }
@@ -43,12 +43,12 @@ The Envoy sidecar proxy was not properly intercepting traffic to `agent:3000`. I
 
 ```bash
 aws ecs update-service \
-  --cluster mcp-demo-cluster \
+  --cluster $CLUSTER_NAME \
   --service ui-service \
-  --service-connect-configuration file://config/ui-service-connect.json \
+  --service-connect-configuration file://config/${STACK_NAME}-ui-service-connect.json \
   --force-new-deployment \
-  --profile smanubol-admin \
-  --region us-west-2
+  --profile $AWS_PROFILE \
+  --region $AWS_REGION
 ```
 
 ### Why This Works
@@ -61,10 +61,10 @@ The redeployment creates a fresh Envoy sidecar container with properly initializ
 After redeployment, check Envoy logs for successful routing:
 ```bash
 aws logs filter-log-events \
-  --log-group-name /ecs/ui-service-connect \
+  --log-group-name /ecs/${STACK_NAME}/ui-service-connect \
   --limit 50 \
-  --profile smanubol-admin \
-  --region us-west-2
+  --profile $AWS_PROFILE \
+  --region $AWS_REGION
 ```
 
 Look for:
@@ -74,17 +74,17 @@ Look for:
 
 ---
 
-## Issue 2: Agent Cannot Invoke Bedrock Model (AccessDeniedException)
+## Issue 2: Agent Cannot Invoke Amazon Bedrock Model (AccessDeniedException)
 
 ### Symptoms
-- Agent logs show: `AccessDeniedException` when calling Bedrock
+- Agent logs show: `AccessDeniedException` when calling Amazon Bedrock
 - Error mentions `inference-profile/global.amazon.nova-*`
 - UI receives error responses from agent
 
 ### Root Cause
 The Agent task role had permissions for **foundation models** but was missing permissions for **inference profiles**.
 
-The agent code uses an inference profile (e.g., `us.amazon.nova-lite-v1:0`) for cross-region inference, which requires separate IAM permissions.
+The agent code uses an inference profile (for example, `us.amazon.nova-lite-v1:0`) for cross-region inference, which requires separate IAM permissions.
 
 ### Solution
 Update the Agent task role's IAM policy to include inference profile resources.
@@ -122,46 +122,41 @@ Update the Agent task role's IAM policy to include inference profile resources.
 ```
 
 ### How to Apply
-Option 1: Update CloudFormation stack (recommended for persistence)
+Option 1: Update the AWS CloudFormation stack (recommended for persistence)
 ```bash
 aws cloudformation update-stack \
-  --stack-name mcp-demo-infrastructure \
+  --stack-name $STACK_NAME \
   --template-body file://cloudformation/infrastructure.yaml \
   --capabilities CAPABILITY_NAMED_IAM \
-  --profile smanubol-admin \
-  --region us-west-2
+  --profile $AWS_PROFILE \
+  --region $AWS_REGION
 ```
 
-Option 2: Update IAM policy directly (immediate fix)
+Option 2: Update the IAM policy directly (immediate fix)
 ```bash
 # Get the current policy
 aws iam get-role-policy \
-  --role-name mcp-demo-infrastructure-agent-task-role \
+  --role-name ${STACK_NAME}-agent-task-role \
   --policy-name BedrockAccess \
-  --profile smanubol-admin
+  --profile $AWS_PROFILE
 
 # Update with new policy including inference-profile resources
 aws iam put-role-policy \
-  --role-name mcp-demo-infrastructure-agent-task-role \
+  --role-name ${STACK_NAME}-agent-task-role \
   --policy-name BedrockAccess \
   --policy-document file://updated-policy.json \
-  --profile smanubol-admin
+  --profile $AWS_PROFILE
 ```
 
 ### Verification
-Test the application by sending a query through the UI:
-```
-https://ui-7aced620c90b418699e2dcf91288ddb1.ecs.us-west-2.on.aws/
-```
-
-Check agent logs for successful Bedrock invocation:
+Check agent logs for successful Amazon Bedrock invocation:
 ```bash
 aws logs filter-log-events \
-  --log-group-name /ecs/agent \
+  --log-group-name /ecs/${STACK_NAME}/agent \
   --filter-pattern "Agent response generated" \
   --limit 10 \
-  --profile smanubol-admin \
-  --region us-west-2
+  --profile $AWS_PROFILE \
+  --region $AWS_REGION
 ```
 
 ---
@@ -176,8 +171,8 @@ Add `logConfiguration` to all Service Connect configs for visibility into Envoy 
   "logConfiguration": {
     "logDriver": "awslogs",
     "options": {
-      "awslogs-group": "/ecs/SERVICE-service-connect",
-      "awslogs-region": "us-west-2",
+      "awslogs-group": "/ecs/${STACK_NAME}/SERVICE-service-connect",
+      "awslogs-region": "${AWS_REGION}",
       "awslogs-stream-prefix": "envoy"
     }
   }
@@ -187,30 +182,29 @@ Add `logConfiguration` to all Service Connect configs for visibility into Envoy 
 ### Check Service Connect Status
 ```bash
 aws ecs describe-services \
-  --cluster mcp-demo-cluster \
+  --cluster $CLUSTER_NAME \
   --services ui-service agent-service mcp-server-service \
   --query 'services[*].{name:serviceName,deployments:deployments[0].serviceConnectConfiguration}' \
-  --profile smanubol-admin \
-  --region us-west-2
+  --profile $AWS_PROFILE \
+  --region $AWS_REGION
 ```
 
-### Verify Cloud Map Registration
+### Verify AWS Cloud Map Registration
 ```bash
-aws servicediscovery list-instances \
-  --service-id srv-vn5inmx45h4u6zqv \
-  --profile smanubol-admin \
-  --region us-west-2
+aws servicediscovery list-namespaces \
+  --profile $AWS_PROFILE \
+  --region $AWS_REGION
 ```
 
 ### Force Service Redeployment
 When Service Connect issues occur, a redeployment often resolves them:
 ```bash
 aws ecs update-service \
-  --cluster mcp-demo-cluster \
+  --cluster $CLUSTER_NAME \
   --service SERVICE_NAME \
   --force-new-deployment \
-  --profile smanubol-admin \
-  --region us-west-2
+  --profile $AWS_PROFILE \
+  --region $AWS_REGION
 ```
 
 ---
@@ -220,9 +214,4 @@ aws ecs update-service \
 | Issue | Root Cause | Fix |
 |-------|------------|-----|
 | UI cannot connect to Agent | Envoy proxy not intercepting traffic | Redeploy UI service with updated Service Connect config |
-| Agent cannot call Bedrock | Missing IAM permissions for inference profiles | Add `inference-profile/*` to task role policy |
-
----
-
-Document Version: 1.0  
-Last Updated: January 26, 2026
+| Agent cannot call Amazon Bedrock | Missing IAM permissions for inference profiles | Add `inference-profile/*` to task role policy |

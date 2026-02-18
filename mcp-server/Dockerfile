@@ -1,21 +1,21 @@
 # =============================================================================
 # MCP Server Dockerfile
-# Production-ready container for Amazon ECS Fargate deployment
+# Production-ready container for FastMCP server on ECS Fargate
 # =============================================================================
 
 FROM python:3.12-slim
 
-# -----------------------------------------------------------------------------
-# Set Working Directory
-# -----------------------------------------------------------------------------
+# =============================================================================
+# WORKING DIRECTORY
+# =============================================================================
 WORKDIR /app
 
-# -----------------------------------------------------------------------------
-# Install System Dependencies
+# =============================================================================
+# SYSTEM DEPENDENCIES
+# Install minimal packages and clean up to reduce image size
 # - curl: Required for health checks
 # - ca-certificates: Required for HTTPS connections to AWS services (S3)
-# - Clean up apt cache to minimize image size
-# -----------------------------------------------------------------------------
+# =============================================================================
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
@@ -23,61 +23,46 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
-# -----------------------------------------------------------------------------
-# Install Python Dependencies
-# - Copy requirements.txt first for Docker layer caching
-# - Upgrade pip to latest version
-# - Install packages without cache to reduce image size
-# -----------------------------------------------------------------------------
+# =============================================================================
+# PYTHON DEPENDENCIES
+# Copy requirements first for Docker layer caching optimization
+# =============================================================================
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# -----------------------------------------------------------------------------
-# Copy Application Code
-# - Copy app directory containing mcp_server.py
-# -----------------------------------------------------------------------------
+# =============================================================================
+# APPLICATION CODE
+# =============================================================================
 COPY app/ ./app/
 
-# -----------------------------------------------------------------------------
-# Create Non-Root User (Security Best Practice)
-# - ECS Fargate runs containers as root by default
-# - Running as non-root user reduces attack surface
-# - UID 1000 is standard for application users
-# -----------------------------------------------------------------------------
-RUN useradd --create-home --uid 1000 --shell /bin/bash appuser && \
+# =============================================================================
+# NON-ROOT USER (Security Best Practice)
+# Create dedicated user for running the application
+# =============================================================================
+RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
-# Switch to non-root user
 USER appuser
 
-# -----------------------------------------------------------------------------
-# Network Configuration
-# - Expose port 8080 for MCP server HTTP/SSE transport
-# -----------------------------------------------------------------------------
+# =============================================================================
+# NETWORK CONFIGURATION
+# Expose MCP server HTTP/SSE transport port
+# =============================================================================
 EXPOSE 8080
 
-# -----------------------------------------------------------------------------
-# Health Check Configuration
-# - ECS uses this to determine container health
-# - Interval: Check every 30 seconds
-# - Timeout: Fail if no response within 10 seconds
-# - Retries: Mark unhealthy after 3 consecutive failures
-# - Start Period: Allow 40 seconds for initial S3 catalog load
-# -----------------------------------------------------------------------------
+# =============================================================================
+# HEALTH CHECK
+# ECS uses this to determine container health
+# =============================================================================
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# -----------------------------------------------------------------------------
-# Environment Variables
-# - S3_BUCKET: Set by ECS task definition (no default)
-# - AWS_REGION: Default to us-west-2
-# - CATALOG_FILE: S3 object key for product catalog
-# - LOG_LEVEL: Python logging level
-# - PYTHONUNBUFFERED: Ensure logs are sent to CloudWatch immediately
-# - PYTHONDONTWRITEBYTECODE: Don't create .pyc files in container
-# -----------------------------------------------------------------------------
+# =============================================================================
+# ENVIRONMENT VARIABLES
+# Defaults for ECS Service Connect and S3 configuration
+# =============================================================================
 ENV AWS_REGION=us-west-2 \
     CATALOG_FILE=product-catalog.json \
     LOG_LEVEL=INFO \
@@ -86,9 +71,8 @@ ENV AWS_REGION=us-west-2 \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# -----------------------------------------------------------------------------
-# Startup Command
-# - Use CMD for flexibility (can be overridden in ECS task definition)
-# - Run as Python module to ensure proper imports
-# -----------------------------------------------------------------------------
+# =============================================================================
+# STARTUP COMMAND
+# Using CMD for flexibility with ECS task definition overrides
+# =============================================================================
 CMD ["python", "-m", "app.mcp_server"]

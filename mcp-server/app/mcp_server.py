@@ -27,7 +27,7 @@ logger = logging.getLogger("mcp-server")
 # =============================================================================
 # ENVIRONMENT VARIABLES
 # =============================================================================
-S3_BUCKET = os.getenv("S3_BUCKET", "mcp-demo-product-catalog-976884845791")
+S3_BUCKET = os.getenv("S3_BUCKET", "")
 AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
 CATALOG_FILE = os.getenv("CATALOG_FILE", "product-catalog.json")
 HOST = os.getenv("HOST", "0.0.0.0")
