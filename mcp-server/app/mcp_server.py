@@ -117,6 +117,7 @@ async def health_endpoint(request):
 # =============================================================================
 @mcp.tool()
 def search_products(
+    query: Optional[str] = None,
     category: Optional[str] = None,
     max_price: Optional[float] = None,
     min_price: Optional[float] = None,
@@ -127,6 +128,7 @@ def search_products(
     Search products in the catalog with optional filters.
     
     Args:
+        query: Free-text search across product name and features (e.g. "wireless headphones", "running shoes", "laptop")
         category: Filter by category (Electronics, Sports, Clothing)
         max_price: Maximum price filter
         min_price: Minimum price filter
@@ -136,13 +138,20 @@ def search_products(
     Returns:
         List of matching products
     """
-    logger.info(f"search_products called: category={category}, max_price={max_price}, "
+    logger.info(f"search_products called: query={query}, category={category}, max_price={max_price}, "
                 f"min_price={min_price}, in_stock_only={in_stock_only}, features={features}")
     
     products = get_catalog()
     results = []
     
     for product in products:
+        # Free-text query filter (searches name + features)
+        if query:
+            searchable = product.get("name", "").lower() + " " + " ".join(product.get("features", [])).lower()
+            query_terms = query.lower().split()
+            if not all(term in searchable for term in query_terms):
+                continue
+        
         # Category filter
         if category and product.get("category", "").lower() != category.lower():
             continue
