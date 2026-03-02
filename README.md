@@ -33,10 +33,10 @@ Internet → ALB (Express Mode) → UI Service (Gradio)
 
 ## Prerequisites
 
-- **AWS CLI v2 ≥ 2.32.0** — required for ECS Express Mode (`create-express-gateway-service`). Service Connect requires ≥ 2.22.0. Run `aws --version` to check.
-- **Docker ≥ 20.10** with buildx support — required for `--platform linux/amd64` cross-platform builds and `--push`. Run `docker --version` to check.
+- **AWS CLI v2 ≥ 2.32.0** — run `aws --version` to check
+- **Docker ≥ 20.10** with buildx support — run `docker --version` to check
 - **Git** — to clone the repository
-- **jq** — for parsing JSON outputs. Run `jq --version` to check.
+- **jq** — run `jq --version` to check
 - **Amazon Bedrock model access** — enable the Amazon Nova Lite model in your AWS account via the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess)
 
 ## Directory Structure
