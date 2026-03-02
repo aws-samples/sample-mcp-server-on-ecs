@@ -92,6 +92,28 @@ aws cloudformation deploy \
   --profile $AWS_PROFILE
 ```
 
+**Validate:** Confirm the stack completed successfully before proceeding.
+
+```bash
+# Should output CREATE_COMPLETE
+aws cloudformation describe-stacks \
+  --stack-name $STACK_NAME \
+  --region $AWS_REGION \
+  --profile $AWS_PROFILE \
+  --query 'Stacks[0].StackStatus' \
+  --output text
+```
+
+> If the status is not `CREATE_COMPLETE`, check the events for errors:
+> ```bash
+> aws cloudformation describe-stack-events \
+>   --stack-name $STACK_NAME \
+>   --region $AWS_REGION \
+>   --profile $AWS_PROFILE \
+>   --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[LogicalResourceId,ResourceStatusReason]' \
+>   --output table
+> ```
+
 ### Step 3: Get Stack Outputs
 
 ```bash
@@ -117,10 +139,16 @@ export UI_ECR=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UIECRRepository
 export UI_LOG_GROUP=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UILogGroupName") | .OutputValue')
 export VPC_ID=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="VpcId") | .OutputValue')
 
-# Verify key outputs
-echo "Cluster: $CLUSTER_NAME"
-echo "S3 Bucket: $S3_BUCKET"
+# Verify key outputs — all values should be non-empty
+echo "Cluster:    $CLUSTER_NAME"
+echo "S3 Bucket:  $S3_BUCKET"
+echo "ECR:        $ECR_REGISTRY"
+echo "Priv Subs:  $PRIVATE_SUBNETS"
+echo "Pub Subs:   $PUBLIC_SUBNETS"
+echo "Infra Role: $INFRA_ROLE"
 ```
+
+> If any value shows `null` or is empty, the stack may not have completed successfully. Re-run the validation in Step 2.
 
 ### Step 4: Login to Amazon ECR
 
@@ -134,6 +162,13 @@ aws ecr get-login-password --region $AWS_REGION --profile $AWS_PROFILE | \
 ```bash
 aws s3 cp sample-data/product-catalog.json s3://$S3_BUCKET/product-catalog.json \
   --region $AWS_REGION --profile $AWS_PROFILE
+```
+
+**Validate:**
+
+```bash
+# Should return product-catalog.json with size ~5 KiB
+aws s3 ls s3://$S3_BUCKET/ --region $AWS_REGION --profile $AWS_PROFILE
 ```
 
 ### Step 6: Build and Push Docker Images
@@ -153,6 +188,21 @@ docker buildx build --platform linux/amd64 \
 docker buildx build --platform linux/amd64 \
   -t $ECR_REGISTRY/${STACK_NAME}-ui:latest \
   ./ui --push
+```
+
+**Validate:** Confirm all three images exist in ECR.
+
+```bash
+# Each should return an imageDigest — if empty, the push failed
+for repo in mcp-server agent ui; do
+  echo "--- ${STACK_NAME}-${repo} ---"
+  aws ecr describe-images \
+    --repository-name ${STACK_NAME}-${repo} \
+    --region $AWS_REGION \
+    --profile $AWS_PROFILE \
+    --query 'imageDetails[0].[imageTags[0],imageSizeInBytes]' \
+    --output text
+done
 ```
 
 ### Step 7: Create Service Connect Config Files
@@ -257,6 +307,31 @@ aws ecs create-service \
   --region $AWS_REGION \
   --profile $AWS_PROFILE
 ```
+
+**Validate:** Wait for MCP Server and Agent to stabilize before deploying UI.
+
+```bash
+echo "Waiting 60 seconds for tasks to start..."
+sleep 60
+
+aws ecs describe-services \
+  --cluster $CLUSTER_NAME \
+  --services mcp-server-service agent-service \
+  --region $AWS_REGION \
+  --profile $AWS_PROFILE \
+  --query 'services[].[serviceName,status,runningCount,desiredCount]' \
+  --output table
+```
+
+> Both services should show `runningCount: 1`. If `runningCount` is 0, check for task failures:
+> ```bash
+> TASK_ARN=$(aws ecs list-tasks --cluster $CLUSTER_NAME --service-name mcp-server-service \
+>   --desired-status STOPPED --region $AWS_REGION --profile $AWS_PROFILE \
+>   --query 'taskArns[0]' --output text)
+> aws ecs describe-tasks --cluster $CLUSTER_NAME --tasks $TASK_ARN \
+>   --region $AWS_REGION --profile $AWS_PROFILE \
+>   --query 'tasks[0].[stoppedReason,containers[].reason]' --output text
+> ```
 
 #### UI Service (Express Mode)
 
@@ -462,6 +537,18 @@ aws cloudformation delete-stack --stack-name $STACK_NAME \
 
 aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME \
   --region $AWS_REGION --profile $AWS_PROFILE
+
+echo "Stack deleted successfully."
+```
+
+**Validate cleanup:** Confirm the stack is gone.
+
+```bash
+# Should return an error indicating the stack does not exist
+aws cloudformation describe-stacks \
+  --stack-name $STACK_NAME \
+  --region $AWS_REGION \
+  --profile $AWS_PROFILE 2>&1 | head -1
 ```
 
 ### Delete Retained Log Groups
