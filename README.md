@@ -1,35 +1,33 @@
 # MCP on Amazon ECS with Service Connect
 
-This project demonstrates how to deploy Model Context Protocol (MCP) servers on Amazon ECS Fargate using ECS Service Connect for service-to-service communication. You build and deploy a three-tier application where a Gradio web interface sends natural language queries to an AI agent, which uses MCP tools to search a product catalog stored in Amazon S3.
+This project demonstrates how to deploy Model Context Protocol (MCP) servers on Amazon Elastic Container Service (Amazon ECS) with AWS Fargate using Amazon ECS Service Connect for service-to-service communication. You build and deploy a three-tier application where a Gradio web interface sends natural language queries to an AI agent, which uses MCP tools to search a product catalog stored in Amazon Simple Storage Service (Amazon S3).
 
-## Architecture
+## Solution Architecture Overview
 
-```
-Internet → ALB (Express Mode) → UI Service (Gradio)
-                                    ↓ Service Connect
-                                Agent Service (Strands + Bedrock)
-                                    ↓ Service Connect
-                                MCP Server (FastMCP)
-                                    ↓
-                                S3 Bucket (Product Catalog)
-```
+![Solution Architecture](images/architecture-diagram.png)
 
-### Components
+### Workflow
 
-- **MCP Server**: FastMCP server providing product catalog search tools via HTTP/SSE transport
-- **Agent**: Strands agent orchestrating MCP tool calls with Amazon Bedrock (Nova Lite model)
-- **UI**: Gradio web interface for natural language product queries
+1. A user submits a natural language query (e.g., "Find laptops under $1000") through the **Gradio UI**, which is exposed to the internet via an Application Load Balancer provisioned by **Amazon ECS Express Mode**.
+2. The UI forwards the request over **Amazon ECS Service Connect** to the **Agent Service** running in a private subnet.
+3. The Agent invokes **Amazon Bedrock** (Nova Lite model) to interpret the query and determine which MCP tools to call.
+4. The Agent connects to the **MCP Server** over **Amazon ECS Service Connect** using the SSE transport protocol.
+5. The MCP Server executes the tool call — searching, filtering, or retrieving product data from an **Amazon S3** bucket.
+6. Results flow back through the chain: MCP Server → Agent → UI → User.
 
-### AWS Services Used
+All inter-service communication stays within the Amazon VPC. Only the UI service is publicly accessible.
 
-- Amazon ECS Fargate with Service Connect
-- Amazon Bedrock (Nova Lite model)
-- Application Load Balancer (ECS Express Mode)
-- AWS Cloud Map for service discovery
-- Amazon S3 for product data
-- Amazon ECR for container images
-- AWS CloudFormation for infrastructure provisioning
-- Amazon CloudWatch for logging and monitoring
+### Key Components
+
+| Component            | Technology                      | Role                                          |
+| -------------------- | ------------------------------- | --------------------------------------------- |
+| **UI Service**       | Gradio on Amazon ECS          | Web chat interface, public-facing via ALB     |
+| **Agent Service**    | Strands Agents + Amazon Bedrock | Orchestrates AI reasoning and MCP tool calls  |
+| **MCP Server**       | FastMCP on Amazon ECS          | Exposes product catalog as MCP tools over SSE |
+| **Service Connect**  | AWS Cloud Map + Envoy proxy     | Service-to-service discovery and routing      |
+| **ECS Express Mode** | Managed ALB + auto-scaling      | Automated public endpoint with HTTPS          |
+| **Product Catalog**  | Amazon S3                       | Stores product data as JSON                   |
+| **Infrastructure**   | AWS CloudFormation              | Amazon VPC, subnets, IAM roles, Amazon ECS cluster |
 
 ## Prerequisites
 
@@ -37,13 +35,13 @@ Internet → ALB (Express Mode) → UI Service (Gradio)
 - **Docker ≥ 20.10** with buildx support — run `docker --version` to check
 - **Git** — to clone the repository
 - **jq** — run `jq --version` to check
-- **Amazon Bedrock model access** — enable the Amazon Nova Lite model in your AWS account via the [Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess)
+- **Amazon Bedrock model access** — enable the Amazon Nova Lite model in your AWS account via the [Amazon Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess)
 
 ## Directory Structure
 
 ```
 ├── cloudformation/
-│   └── infrastructure.yaml      # VPC, ECS cluster, IAM roles, ECR repos
+│   └── infrastructure.yaml      # Amazon VPC, Amazon ECS cluster, IAM roles, Amazon ECR repos
 ├── mcp-server/
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -70,8 +68,8 @@ Internet → ALB (Express Mode) → UI Service (Gradio)
 ### Step 1: Clone Repository and Set Variables
 
 ```bash
-git clone https://github.com/aws-samples/ecs-mcp-blog.git
-cd ecs-mcp-blog
+git clone https://github.com/aws-samples/sample-mcp-server-on-ecs.git
+cd sample-mcp-server-on-ecs
 
 # Set your variables (modify these for your environment)
 export STACK_NAME=ecs-mcp-blog
@@ -81,7 +79,9 @@ export AWS_PROFILE=default
 
 ### Step 2: Deploy Infrastructure
 
-Deploy the AWS CloudFormation stack that creates the VPC, Amazon ECS cluster, IAM roles, and Amazon ECR repositories.
+The [AWS CloudFormation](https://aws.amazon.com/cloudformation/) template provisions all the infrastructure in a single stack: an [Amazon Virtual Private Cloud](https://aws.amazon.com/vpc/) (Amazon VPC) with public and private subnets across two Availability Zones, an [Amazon ECS](https://aws.amazon.com/ecs/) cluster with [AWS Fargate](https://aws.amazon.com/fargate/) capacity providers, [Amazon Elastic Container Registry](https://aws.amazon.com/ecr/) (Amazon ECR) repositories for the three container images, an [Amazon S3](https://aws.amazon.com/s3/) bucket for product data, [AWS Identity and Access Management](https://aws.amazon.com/iam/) (IAM) roles with least-privilege permissions, security groups that restrict traffic between services, and an [AWS Cloud Map](https://aws.amazon.com/cloud-map/) namespace for Service Connect discovery.
+
+Using a single stack means you can deploy the entire environment with one command and tear it down cleanly when you're done.
 
 ```bash
 aws cloudformation deploy \
@@ -115,6 +115,8 @@ aws cloudformation describe-stacks \
 > ```
 
 ### Step 3: Get Stack Outputs
+
+The remaining steps reference resource IDs and ARNs that AWS CloudFormation created — subnet IDs, security group IDs, IAM role ARNs, and Amazon ECR repository URIs. Rather than looking these up manually in the console, you retrieve all stack outputs in a single API call and export them as environment variables. This keeps every subsequent command portable and copy-paste ready.
 
 ```bash
 # Get AWS Account ID
@@ -152,10 +154,14 @@ echo "Infra Role: $INFRA_ROLE"
 
 ### Step 4: Login to Amazon ECR
 
+Before you can push container images, Docker needs to authenticate with Amazon ECR. The following command retrieves a temporary authentication token and passes it to `docker login`.
+
 ```bash
 aws ecr get-login-password --region $AWS_REGION --profile $AWS_PROFILE | \
   docker login --username AWS --password-stdin $ECR_REGISTRY
 ```
+
+You should see `Login Succeeded` in the output. If you receive an authorization error, verify that your AWS CLI credentials have `ecr:GetAuthorizationToken` permission and that the `ECR_REGISTRY` variable from Step 3 is set correctly.
 
 ### Step 5: Upload Product Catalog
 
@@ -172,6 +178,8 @@ aws s3 ls s3://$S3_BUCKET/ --region $AWS_REGION --profile $AWS_PROFILE
 ```
 
 ### Step 6: Build and Push Docker Images
+
+Each service has its own `Dockerfile` in its directory. The `--platform linux/amd64` flag is required because Amazon ECS with AWS Fargate runs Linux x86_64 containers. If you build on Apple Silicon (M1/M2/M3) without this flag, the task will fail at runtime with an exec format error. The `--push` flag combines the build and push into a single command.
 
 ```bash
 # MCP Server
@@ -190,7 +198,7 @@ docker buildx build --platform linux/amd64 \
   ./ui --push
 ```
 
-**Validate:** Confirm all three images exist in ECR.
+**Validate:** Confirm all three images exist in Amazon ECR.
 
 ```bash
 # Each should return an imageDigest — if empty, the push failed
@@ -206,6 +214,8 @@ done
 ```
 
 ### Step 7: Create Service Connect Config Files
+
+Amazon ECS Service Connect uses [AWS Cloud Map](https://docs.aws.amazon.com/cloud-map/latest/dg/what-is-cloud-map.html) for service discovery and an [Envoy](https://www.envoyproxy.io/) sidecar proxy for traffic routing. Each service needs a JSON configuration that defines its discovery name, port mapping, and log destination. The MCP Server and Agent register themselves as discoverable endpoints so other services can reach them by name (for example, `http://mcp-server:8080`). The UI is a client-only consumer — it doesn't register itself but needs the Envoy sidecar to resolve the Agent's address.
 
 ```bash
 mkdir -p config
@@ -276,7 +286,7 @@ EOF
 
 ### Step 8: Deploy Amazon ECS Services
 
-Deploy the MCP Server and Agent as standard Amazon ECS services, and the UI using ECS Express Mode.
+You deploy the services in dependency order: MCP Server first (no upstream dependencies), then Agent (depends on MCP Server), and finally the UI (depends on Agent). The MCP Server and Agent run as standard Amazon ECS services in private subnets with no public IP addresses — Amazon ECS Service Connect handles all inter-service routing. The UI uses Amazon ECS Express Mode, which automatically provisions an Application Load Balancer, target group, and auto-scaling policy.
 
 #### MCP Server Service
 
@@ -419,10 +429,26 @@ echo "UI URL: https://${UI_ENDPOINT}/"
 
 ### Step 10: Test the Application
 
-Open the UI URL in your browser and try queries like:
+Open the UI URL in your browser. You should see a Gradio chat interface with a text input field. Try the following queries to verify the end-to-end flow through all three services:
+
 - "Show me electronics under $100"
 - "What laptops do you have?"
 - "Find running shoes in stock"
+
+Each query travels the full chain: the UI sends it to the Agent over Amazon ECS Service Connect, the Agent calls Amazon Bedrock to decide which MCP tools to invoke, the MCP Server searches the product catalog in Amazon S3, and the results flow back to the user. Responses typically take 3–5 seconds on the first query while the MCP Server loads the catalog from Amazon S3.
+
+If the UI loads but queries return errors, check the Agent and MCP Server logs:
+
+```bash
+# Agent logs — look for Amazon Bedrock or MCP connection errors
+aws logs tail /ecs/${STACK_NAME}/agent --since 10m \
+  --region $AWS_REGION --profile $AWS_PROFILE
+
+# MCP Server logs — look for Amazon S3 or startup errors
+aws logs tail /ecs/${STACK_NAME}/mcp-server --since 10m \
+  --region $AWS_REGION --profile $AWS_PROFILE
+```
+
 
 
 ## Cleanup
@@ -465,7 +491,7 @@ sleep 120
 
 ### Delete Express Mode Orphan Resources
 
-Express Mode creates an ALB and security groups at runtime that are not managed by AWS CloudFormation. Remove them before deleting the VPC.
+Express Mode creates an ALB and security groups at runtime that are not managed by AWS CloudFormation. Remove them before deleting the Amazon VPC.
 
 ```bash
 # Delete orphan ALB in the VPC (if it exists)
@@ -553,7 +579,7 @@ aws cloudformation describe-stacks \
 
 ### Delete Retained Log Groups
 
-Amazon CloudWatch log groups are retained by AWS CloudFormation by design. Remove them manually.
+[Amazon CloudWatch](https://aws.amazon.com/cloudwatch/) log groups are retained by AWS CloudFormation by design. Remove them manually.
 
 ```bash
 for LOG_GROUP in /ecs/${STACK_NAME}/mcp-server /ecs/${STACK_NAME}/agent /ecs/${STACK_NAME}/ui \
@@ -566,11 +592,11 @@ done
 
 ### Manual VPC Cleanup (if needed)
 
-If the AWS CloudFormation stack deletion fails on the VPC resource (for example, due to lingering ENIs or dependencies), you can manually delete the VPC:
+If the AWS CloudFormation stack deletion fails on the Amazon VPC resource (for example, due to lingering ENIs or dependencies), you can manually delete the Amazon VPC:
 
-1. Open the [VPC console](https://console.aws.amazon.com/vpc/).
-2. Select the VPC tagged with your stack name.
-3. Choose **Delete VPC** to remove the VPC and its associated subnets, route tables, and internet gateways.
+1. Open the [Amazon VPC console](https://console.aws.amazon.com/vpc/).
+2. Select the Amazon VPC tagged with your stack name.
+3. Choose **Delete VPC** to remove the Amazon VPC and its associated subnets, route tables, and internet gateways.
 
 
 ## Troubleshooting
@@ -614,4 +640,4 @@ This library is licensed under the MIT-0 License. See the LICENSE file.
 
 ## Conclusion
 
-You have deployed a three-tier MCP application on Amazon ECS Fargate with ECS Service Connect handling service-to-service communication. The architecture uses Amazon Bedrock for AI inference, FastMCP for tool serving, and Gradio for the web interface. To extend this project, you can add more MCP tools to the server, swap the AI model, or integrate additional data sources through Amazon S3.
+You have deployed a three-tier MCP application on Amazon ECS with AWS Fargate, with Amazon ECS Service Connect handling service-to-service communication. The architecture uses Amazon Bedrock for AI inference, FastMCP for tool serving, and Gradio for the web interface. To extend this project, you can add more MCP tools to the server, swap the AI model, or integrate additional data sources through Amazon S3.
