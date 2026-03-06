@@ -19,14 +19,14 @@ All inter-service communication stays within the Amazon VPC. Only the UI service
 
 ### Key Components
 
-| Component            | Technology                      | Role                                          |
-| -------------------- | ------------------------------- | --------------------------------------------- |
-| **UI Service**       | Gradio on Amazon ECS          | Web chat interface, public-facing via ALB     |
-| **Agent Service**    | Strands Agents + Amazon Bedrock | Orchestrates AI reasoning and MCP tool calls  |
-| **MCP Server**       | FastMCP on Amazon ECS          | Exposes product catalog as MCP tools over SSE |
-| **Service Connect**  | AWS Cloud Map + Envoy proxy     | Service-to-service discovery and routing      |
-| **ECS Express Mode** | Managed ALB + auto-scaling      | Automated public endpoint with HTTPS          |
-| **Product Catalog**  | Amazon S3                       | Stores product data as JSON                   |
+| Component            | Technology                      | Role                                               |
+| -------------------- | ------------------------------- | -------------------------------------------------- |
+| **UI Service**       | Gradio on Amazon ECS            | Web chat interface, public-facing via ALB          |
+| **Agent Service**    | Strands Agents + Amazon Bedrock | Orchestrates AI reasoning and MCP tool calls       |
+| **MCP Server**       | FastMCP on Amazon ECS           | Exposes product catalog as MCP tools over SSE      |
+| **Service Connect**  | AWS Cloud Map + Envoy proxy     | Service-to-service discovery and routing           |
+| **ECS Express Mode** | Managed ALB + auto-scaling      | Automated public endpoint with HTTPS               |
+| **Product Catalog**  | Amazon S3                       | Stores product data as JSON                        |
 | **Infrastructure**   | AWS CloudFormation              | Amazon VPC, subnets, IAM roles, Amazon ECS cluster |
 
 ## Prerequisites
@@ -56,6 +56,8 @@ All inter-service communication stays within the Amazon VPC. Only the UI service
 │   └── app.py                   # Gradio chat interface
 ├── sample-data/
 │   └── product-catalog.json     # Sample product data
+├── scripts/
+│   └── cleanup.sh               # Resource cleanup script
 └── docs/
     └── TROUBLESHOOTING.md       # Common issues and solutions
 ```
@@ -333,15 +335,17 @@ aws ecs describe-services \
   --output table
 ```
 
-> Both services should show `runningCount: 1`. If `runningCount` is 0, check for task failures:
-> ```bash
-> TASK_ARN=$(aws ecs list-tasks --cluster $CLUSTER_NAME --service-name mcp-server-service \
->   --desired-status STOPPED --region $AWS_REGION --profile $AWS_PROFILE \
->   --query 'taskArns[0]' --output text)
-> aws ecs describe-tasks --cluster $CLUSTER_NAME --tasks $TASK_ARN \
->   --region $AWS_REGION --profile $AWS_PROFILE \
->   --query 'tasks[0].[stoppedReason,containers[].reason]' --output text
-> ```
+Both services should show `runningCount: 1`. If `runningCount` is 0, check for task failures:
+
+```bash
+TASK_ARN=$(aws ecs list-tasks --cluster $CLUSTER_NAME --service-name mcp-server-service \
+  --desired-status STOPPED --region $AWS_REGION --profile $AWS_PROFILE \
+  --query 'taskArns[0]' --output text)
+
+aws ecs describe-tasks --cluster $CLUSTER_NAME --tasks $TASK_ARN \
+  --region $AWS_REGION --profile $AWS_PROFILE \
+  --query 'tasks[0].[stoppedReason,containers[].reason]' --output text
+```
 
 #### UI Service (Express Mode)
 
@@ -453,142 +457,32 @@ aws logs tail /ecs/${STACK_NAME}/mcp-server --since 10m \
 
 ## Cleanup
 
-> **Important:** This deployment creates billable AWS resources. Follow these steps to remove all resources and avoid ongoing charges.
+> **Important:** This deployment creates billable AWS resources. Run the cleanup script to remove all resources and avoid ongoing charges.
 
-### Delete the UI Service
+### Run the Cleanup Script
 
-Express Mode requires a separate API for deletion.
-
-```bash
-UI_SERVICE_ARN=$(aws ecs describe-services --cluster $CLUSTER_NAME --services ui-service \
-  --region $AWS_REGION --profile $AWS_PROFILE \
-  --query 'services[0].serviceArn' --output text)
-
-aws ecs delete-express-gateway-service \
-  --service-arn $UI_SERVICE_ARN \
-  --region $AWS_REGION \
-  --profile $AWS_PROFILE
-```
-
-### Delete Standard Services
+The cleanup script removes all resources in the correct order: Amazon ECS services, Express Mode resources, Amazon S3 buckets, Amazon ECR repositories, the AWS CloudFormation stack, and retained log groups.
 
 ```bash
-aws ecs delete-service --cluster $CLUSTER_NAME --service agent-service --force \
-  --region $AWS_REGION --profile $AWS_PROFILE
+# Ensure your deployment variables are set
+export STACK_NAME=ecs-mcp-blog
+export AWS_REGION=us-west-2
+export AWS_PROFILE=default
 
-aws ecs delete-service --cluster $CLUSTER_NAME --service mcp-server-service --force \
-  --region $AWS_REGION --profile $AWS_PROFILE
+# Run cleanup
+./scripts/cleanup.sh
 ```
 
-### Wait for Services to Drain
+The script will:
+1. Delete all Amazon ECS services in parallel
+2. Wait for services to drain
+3. Remove Express Mode ALB and orphan security groups
+4. Empty Amazon S3 buckets (including versioned objects)
+5. Delete Amazon ECR repositories
+6. Delete the AWS CloudFormation stack
+7. Remove retained [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/) log groups
 
-Express Mode needs extra time to release the ALB and security groups it created at runtime.
-
-```bash
-echo "Waiting 120 seconds for services and Express Mode resources to drain..."
-sleep 120
-```
-
-### Delete Express Mode Orphan Resources
-
-Express Mode creates an ALB and security groups at runtime that are not managed by AWS CloudFormation. Remove them before deleting the Amazon VPC.
-
-```bash
-# Delete orphan ALB in the VPC (if it exists)
-ALB_ARN=$(aws elbv2 describe-load-balancers --region $AWS_REGION --profile $AWS_PROFILE \
-  --query "LoadBalancers[?VpcId=='${VPC_ID}' && contains(LoadBalancerName, 'ecs-express-gateway')].LoadBalancerArn" \
-  --output text)
-[ -n "$ALB_ARN" ] && aws elbv2 delete-load-balancer --load-balancer-arn $ALB_ARN \
-  --region $AWS_REGION --profile $AWS_PROFILE && sleep 30
-```
-
-```bash
-# Delete orphan security groups created by ECS Express Mode
-for SG in $(aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC_ID \
-  --query "SecurityGroups[?GroupName != 'default'].GroupId" --output text \
-  --region $AWS_REGION --profile $AWS_PROFILE); do
-  aws ec2 delete-security-group --group-id $SG --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
-done
-```
-
-### Empty Amazon S3 Buckets
-
-Versioned buckets require deleting all object versions and delete markers before AWS CloudFormation can remove them.
-
-```bash
-# Empty product catalog bucket
-aws s3 rm s3://$S3_BUCKET --recursive --profile $AWS_PROFILE
-aws s3api delete-objects --bucket $S3_BUCKET \
-  --delete "$(aws s3api list-object-versions --bucket $S3_BUCKET \
-    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --profile $AWS_PROFILE)" \
-  --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
-aws s3api delete-objects --bucket $S3_BUCKET \
-  --delete "$(aws s3api list-object-versions --bucket $S3_BUCKET \
-    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --profile $AWS_PROFILE)" \
-  --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
-```
-
-```bash
-# Empty access logs bucket
-ACCESS_LOGS_BUCKET="${STACK_NAME}-access-logs-${AWS_ACCOUNT_ID}"
-aws s3 rm s3://$ACCESS_LOGS_BUCKET --recursive --profile $AWS_PROFILE 2>/dev/null || true
-aws s3api delete-objects --bucket $ACCESS_LOGS_BUCKET \
-  --delete "$(aws s3api list-object-versions --bucket $ACCESS_LOGS_BUCKET \
-    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --profile $AWS_PROFILE)" \
-  --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
-aws s3api delete-objects --bucket $ACCESS_LOGS_BUCKET \
-  --delete "$(aws s3api list-object-versions --bucket $ACCESS_LOGS_BUCKET \
-    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --profile $AWS_PROFILE)" \
-  --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
-```
-
-### Delete Amazon ECR Repositories
-
-Amazon ECR repositories must be emptied before AWS CloudFormation can delete them.
-
-```bash
-aws ecr delete-repository --repository-name ${STACK_NAME}-mcp-server --force \
-  --region $AWS_REGION --profile $AWS_PROFILE
-aws ecr delete-repository --repository-name ${STACK_NAME}-agent --force \
-  --region $AWS_REGION --profile $AWS_PROFILE
-aws ecr delete-repository --repository-name ${STACK_NAME}-ui --force \
-  --region $AWS_REGION --profile $AWS_PROFILE
-```
-
-### Delete the AWS CloudFormation Stack
-
-```bash
-aws cloudformation delete-stack --stack-name $STACK_NAME \
-  --region $AWS_REGION --profile $AWS_PROFILE
-
-aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME \
-  --region $AWS_REGION --profile $AWS_PROFILE
-
-echo "Stack deleted successfully."
-```
-
-**Validate cleanup:** Confirm the stack is gone.
-
-```bash
-# Should return an error indicating the stack does not exist
-aws cloudformation describe-stacks \
-  --stack-name $STACK_NAME \
-  --region $AWS_REGION \
-  --profile $AWS_PROFILE 2>&1 | head -1
-```
-
-### Delete Retained Log Groups
-
-[Amazon CloudWatch](https://aws.amazon.com/cloudwatch/) log groups are retained by AWS CloudFormation by design. Remove them manually.
-
-```bash
-for LOG_GROUP in /ecs/${STACK_NAME}/mcp-server /ecs/${STACK_NAME}/agent /ecs/${STACK_NAME}/ui \
-  /ecs/${STACK_NAME}/mcp-server-service-connect /ecs/${STACK_NAME}/agent-service-connect \
-  /ecs/${STACK_NAME}/ui-service-connect; do
-  aws logs delete-log-group --log-group-name $LOG_GROUP \
-    --region $AWS_REGION --profile $AWS_PROFILE 2>/dev/null || true
-done
-```
+If any step fails, the script continues and reports failures at the end with links to the AWS Console for manual cleanup.
 
 ### Manual VPC Cleanup (if needed)
 
