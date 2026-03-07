@@ -121,7 +121,7 @@ delete_express_mode_resources() {
         --query "SecurityGroups[?GroupName != 'default'].GroupId" --output text \
         --region "$AWS_REGION" --profile "$AWS_PROFILE" 2>/dev/null); do
         aws ec2 delete-security-group --group-id "$SG" \
-            --region "$AWS_REGION" --profile "$AWS_PROFILE" 2>/dev/null || true
+            --region "$AWS_REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1 || true
     done
 }
 
@@ -162,15 +162,26 @@ delete_ecr_repos() {
     log_step "Deleting ECR repositories..."
     
     for repo in mcp-server agent ui; do
-        log_info "Deleting ${STACK_NAME}-${repo}..."
-        aws ecr delete-repository --repository-name "${STACK_NAME}-${repo}" --force \
-            --region "$AWS_REGION" --profile "$AWS_PROFILE" 2>/dev/null || record_failure "Delete ECR: $repo"
+        if aws ecr describe-repositories --repository-names "${STACK_NAME}-${repo}" \
+            --region "$AWS_REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1; then
+            log_info "Deleting ${STACK_NAME}-${repo}..."
+            aws ecr delete-repository --repository-name "${STACK_NAME}-${repo}" --force \
+                --region "$AWS_REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1 || record_failure "Delete ECR: $repo"
+        fi
     done
 }
 
 # Delete CloudFormation stack
 delete_stack() {
     log_step "Deleting CloudFormation stack..."
+    
+    # Final pass to delete any remaining orphan security groups (Express Mode SGs may release late)
+    for SG in $(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" \
+        --query "SecurityGroups[?GroupName != 'default'].GroupId" --output text \
+        --region "$AWS_REGION" --profile "$AWS_PROFILE" 2>/dev/null); do
+        aws ec2 delete-security-group --group-id "$SG" \
+            --region "$AWS_REGION" --profile "$AWS_PROFILE" > /dev/null 2>&1 || true
+    done
     
     aws cloudformation delete-stack --stack-name "$STACK_NAME" \
         --region "$AWS_REGION" --profile "$AWS_PROFILE" || { record_failure "Delete stack"; return 1; }
@@ -207,7 +218,7 @@ verify_cleanup() {
         status=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$svc" \
             --region "$AWS_REGION" --profile "$AWS_PROFILE" \
             --query 'services[0].status' --output text 2>/dev/null)
-        if [ -n "$status" ] && [ "$status" != "None" ] && [ "$status" != "INACTIVE" ]; then
+        if [ -n "$status" ] && [ "$status" != "None" ] && [ "$status" != "INACTIVE" ] && [ "$status" != "DRAINING" ]; then
             remaining+=("ECS service: $svc ($status)")
         fi
     done

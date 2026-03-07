@@ -149,7 +149,10 @@ def search_products(
         if query:
             searchable = product.get("name", "").lower() + " " + " ".join(product.get("features", [])).lower()
             query_terms = query.lower().split()
-            if not all(term in searchable for term in query_terms):
+            if not all(
+                any(word.startswith(term) or term.startswith(word) for word in searchable.split())
+                for term in query_terms
+            ):
                 continue
         
         # Category filter

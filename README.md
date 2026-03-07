@@ -323,8 +323,8 @@ aws ecs create-service \
 **Validate:** Wait for MCP Server and Agent to stabilize before deploying UI.
 
 ```bash
-echo "Waiting 60 seconds for tasks to start..."
-sleep 60
+echo "Waiting 90 seconds for tasks to start..."
+sleep 90
 
 aws ecs describe-services \
   --cluster $CLUSTER_NAME \
@@ -342,9 +342,13 @@ TASK_ARN=$(aws ecs list-tasks --cluster $CLUSTER_NAME --service-name mcp-server-
   --desired-status STOPPED --region $AWS_REGION --profile $AWS_PROFILE \
   --query 'taskArns[0]' --output text)
 
-aws ecs describe-tasks --cluster $CLUSTER_NAME --tasks $TASK_ARN \
-  --region $AWS_REGION --profile $AWS_PROFILE \
-  --query 'tasks[0].[stoppedReason,containers[].reason]' --output text
+if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
+  aws ecs describe-tasks --cluster $CLUSTER_NAME --tasks $TASK_ARN \
+    --region $AWS_REGION --profile $AWS_PROFILE \
+    --query 'tasks[0].[stoppedReason,containers[].reason]' --output text
+else
+  echo "No stopped tasks found for mcp-server-service"
+fi
 ```
 
 #### UI Service (Express Mode)
@@ -404,7 +408,17 @@ aws ecs update-service \
 
 > **Note:** Express Mode does not support Service Connect on initial creation. The update step adds the Envoy sidecar needed for UI to communicate with Agent via `http://agent:3000`.
 
-> **Deployment Time:** Express Mode uses canary deployments with a 6-minute bake time. Wait 6-7 minutes after the update for traffic to shift to the new task.
+**Wait for the Service Connect deployment to complete (~6 minutes):**
+
+Express Mode uses canary deployments with a bake period. The following command waits until the new task (with Service Connect) is stable and the old task has drained:
+
+```bash
+aws ecs wait services-stable \
+  --cluster $CLUSTER_NAME \
+  --services ui-service \
+  --region $AWS_REGION \
+  --profile $AWS_PROFILE
+```
 
 ### Step 9: Verify Deployment
 
@@ -417,7 +431,23 @@ aws ecs describe-services \
   --profile $AWS_PROFILE \
   --query 'services[].[serviceName,status,runningCount,desiredCount]' \
   --output table
+```
 
+All three services should show `ACTIVE` with `runningCount` matching `desiredCount`:
+
+```
+--------------------------------------------
+|             DescribeServices             |
++---------------------+---------+----+-----+
+|  mcp-server-service |  ACTIVE |  1 |  1  |
+|  agent-service      |  ACTIVE |  1 |  1  |
+|  ui-service         |  ACTIVE |  1 |  1  |
++---------------------+---------+----+-----+
+```
+
+> **⚠️ If `ui-service` shows `2/1` (runningCount > desiredCount):** The canary deployment is still in progress. Wait a few more minutes and re-run the command. Do not proceed until all services show matching counts.
+
+```bash
 # Get UI public URL via Express Mode API
 UI_SERVICE_ARN=$(aws ecs describe-services --cluster $CLUSTER_NAME --services ui-service \
   --region $AWS_REGION --profile $AWS_PROFILE \
