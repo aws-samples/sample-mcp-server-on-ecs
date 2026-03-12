@@ -1,0 +1,1182 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AWS MCP ECS Blog - Base Infrastructure
+  This template deploys the foundational infrastructure for running MCP (Model Context Protocol)
+  servers on Amazon ECS Fargate with ECS Service Connect for service-to-service communication.
+
+# =============================================================================
+# SECURITY CONTROLS SUMMARY
+# =============================================================================
+# This template implements the following security controls:
+# - KMS Encryption: Customer-managed KMS key for CloudWatch Logs and ECR repos
+# - S3 TLS Enforcement: Bucket policy denying non-HTTPS requests
+# - S3 Access Logging: Dedicated logging bucket for audit trail
+# - S3 Versioning: Enabled on all S3 buckets for data protection
+# - ECR Immutable Tags: Prevents overwriting published container images
+# - IAM Least Privilege: Scoped IAM policies per service role
+# - Network Isolation: VPC with private subnets, security groups per service
+# - Container Insights: ECS cluster monitoring enabled
+# =============================================================================
+
+# =============================================================================
+# RESOURCES
+# =============================================================================
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # VPC AND NETWORKING
+  # ---------------------------------------------------------------------------
+  
+  # VPC with DNS support for Cloud Map integration
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-vpc'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # Internet Gateway for public subnet internet access
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-igw'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Attach Internet Gateway to VPC
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # ---------------------------------------------------------------------------
+  # PUBLIC SUBNETS
+  # ---------------------------------------------------------------------------
+  
+  # Public Subnet 1 in AZ-a (hosts NAT Gateway)
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.1.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-subnet-1'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Public Subnet 2 in AZ-b
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.2.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-subnet-2'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ---------------------------------------------------------------------------
+  # PRIVATE SUBNETS
+  # ---------------------------------------------------------------------------
+  
+  # Private Subnet 1 in AZ-a (for ECS tasks)
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.11.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-subnet-1'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Private Subnet 2 in AZ-b (for ECS tasks)
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.12.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-subnet-2'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ---------------------------------------------------------------------------
+  # NAT GATEWAY (Single instance for cost optimization)
+  # ---------------------------------------------------------------------------
+  
+  # Elastic IP for NAT Gateway
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-nat-eip'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # NAT Gateway in Public Subnet 1
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-nat-gateway'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ---------------------------------------------------------------------------
+  # ROUTE TABLES
+  # ---------------------------------------------------------------------------
+  
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-rt'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Public route to Internet Gateway
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  # Associate Public Subnet 1 with Public Route Table
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  # Associate Public Subnet 2 with Public Route Table
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Private Route Table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-rt'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Private route to NAT Gateway
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NatGateway
+
+  # Associate Private Subnet 1 with Private Route Table
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  # Associate Private Subnet 2 with Private Route Table
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ---------------------------------------------------------------------------
+  # SECURITY GROUPS
+  # ---------------------------------------------------------------------------
+  
+  # Security Group for MCP Server - allows inbound from Agent only on port 8080, all outbound
+  MCPServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-mcp-server-sg'
+      GroupDescription: Security group for MCP Server - allows inbound from Agent
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-mcp-server-sg'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Security Group for UI - allows inbound HTTP (80) and HTTPS (443) from internet, all outbound
+  UISecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-ui-sg'
+      GroupDescription: Security group for UI - allows inbound HTTP/HTTPS from internet
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+          Description: Allow inbound HTTP from internet
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: '0.0.0.0/0'
+          Description: Allow inbound HTTPS from internet
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ui-sg'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Security Group for Agent - allows inbound from UI on port 3000, all outbound
+  AgentSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-agent-sg'
+      GroupDescription: Security group for Agent - allows inbound from UI
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-agent-sg'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Ingress rule for Agent - allow port 3000 from UI SG (must be separate to avoid circular dependency)
+  AgentSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 3000
+      ToPort: 3000
+      SourceSecurityGroupId: !Ref UISecurityGroup
+      Description: Allow inbound on port 3000 from UI Security Group
+
+  # Ingress rule for MCP Server - reference Agent SG (must be separate to avoid circular dependency)
+  MCPServerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref MCPServerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !Ref AgentSecurityGroup
+      Description: Allow inbound on port 8080 from Agent Security Group
+
+  # ---------------------------------------------------------------------------
+  # ECS CLUSTER
+  # ---------------------------------------------------------------------------
+  
+  # ECS Cluster with Container Insights and Fargate capacity provider
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${AWS::StackName}-cluster'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-cluster'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # ---------------------------------------------------------------------------
+  # S3 BUCKET FOR PRODUCT CATALOG
+  # ---------------------------------------------------------------------------
+  
+  # S3 Bucket for storing product catalog JSON files
+  ProductCatalogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-catalog-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessLogsBucket
+        LogFilePrefix: catalog-logs/
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-catalog-${AWS::AccountId}'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Dedicated S3 bucket for audit logging - receives access logs from ProductCatalogBucket
+  AccessLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-access-logs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-access-logs-${AWS::AccountId}'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # Bucket policy granting S3 log delivery service write access to the access logs bucket
+  AccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AccessLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: S3ServerAccessLogsPolicy
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${AccessLogsBucket.Arn}/*'
+            Condition:
+              ArnLike:
+                aws:SourceArn: !GetAtt ProductCatalogBucket.Arn
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  # S3 Bucket Policy enforcing TLS-only access to the ProductCatalogBucket
+  # Denies any request made without HTTPS (aws:SecureTransport: false)
+  ProductCatalogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProductCatalogBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ProductCatalogBucket.Arn
+              - !Sub '${ProductCatalogBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # ---------------------------------------------------------------------------
+  # KMS ENCRYPTION KEY
+  # ---------------------------------------------------------------------------
+
+  # KMS key used for encrypting CloudWatch Logs and ECR repositories
+  # Enables customer-managed encryption for data at rest
+  LogEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'Encryption key for ${AWS::StackName} CloudWatch Logs and ECR repositories'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowAccountAdminAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowCloudWatchLogsEncryption
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - 'kms:Encrypt*'
+              - 'kms:Decrypt*'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:Describe*'
+            Resource: '*'
+            Condition:
+              ArnLike:
+                'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-encryption-key'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # Alias for the KMS key for easier identification
+  LogEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${AWS::StackName}-encryption-key'
+      TargetKeyId: !Ref LogEncryptionKey
+
+  # ---------------------------------------------------------------------------
+  # SERVICE DISCOVERY (CLOUD MAP)
+  # ---------------------------------------------------------------------------
+  
+  # Private DNS Namespace for ECS Service Connect
+  CloudMapNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub '${AWS::StackName}.local'
+      Vpc: !Ref VPC
+      Description: Private DNS namespace for MCP ECS services
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}.local'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ---------------------------------------------------------------------------
+  # ECR REPOSITORIES
+  # ---------------------------------------------------------------------------
+  
+  # ECR Repository for MCP Server images
+  MCPServerECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${AWS::StackName}-mcp-server'
+      # KMS encryption for container images at rest
+      EncryptionConfiguration:
+        EncryptionType: KMS
+        KmsKey: !GetAtt LogEncryptionKey.Arn
+      # Immutable tags prevent overwriting published images
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: mcp-server
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ECR Repository for Agent images
+  AgentECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${AWS::StackName}-agent'
+      # KMS encryption for container images at rest
+      EncryptionConfiguration:
+        EncryptionType: KMS
+        KmsKey: !GetAtt LogEncryptionKey.Arn
+      # Immutable tags prevent overwriting published images
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: agent
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ECR Repository for UI images
+  UIECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${AWS::StackName}-ui'
+      # KMS encryption for container images at rest
+      EncryptionConfiguration:
+        EncryptionType: KMS
+        KmsKey: !GetAtt LogEncryptionKey.Arn
+      # Immutable tags prevent overwriting published images
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: ui
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ---------------------------------------------------------------------------
+  # IAM ROLES
+  # ---------------------------------------------------------------------------
+  
+  # ECS Task Execution Role - used by ECS agent to pull images and write logs
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ecs-task-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ECRAndLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ECRAuthToken
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: ECRImagePull
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource:
+                  - !GetAtt MCPServerECRRepository.Arn
+                  - !GetAtt AgentECRRepository.Arn
+                  - !GetAtt UIECRRepository.Arn
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !GetAtt MCPServerLogGroup.Arn
+                  - !GetAtt AgentLogGroup.Arn
+                  - !GetAtt UILogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ecs-task-execution-role'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # MCP Server Task Role - used by MCP Server container for S3 and Cloud Map access
+  MCPServerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-mcp-server-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ProductCatalogBucket.Arn
+                  - !Sub '${ProductCatalogBucket.Arn}/*'
+        - PolicyName: CloudMapAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - servicediscovery:DiscoverInstances
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    servicediscovery:NamespaceName: !Sub '${AWS::StackName}.local'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-mcp-server-task-role'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ECS Express Infrastructure Role - for ECS Express deployments with ALB/Auto Scaling
+  ECSExpressInfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ecs-express-infrastructure-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices
+      Policies:
+        - PolicyName: ECSServiceManagement
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ECSCluster}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ecs-express-infrastructure-role'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # UI Task Role - permissions for Cloud Map discovery
+  UITaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ui-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudMapAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - servicediscovery:DiscoverInstances
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    servicediscovery:NamespaceName: !Sub '${AWS::StackName}.local'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ui-task-role'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Agent Task Role - permissions for Cloud Map discovery and Bedrock access
+  AgentTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-agent-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudMapAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - servicediscovery:DiscoverInstances
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    servicediscovery:NamespaceName: !Sub '${AWS::StackName}.local'
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.nova-*'
+                  # Inference profiles are required when using cross-region inference
+                  - !Sub 'arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:*::inference-profile/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-agent-task-role'
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # ---------------------------------------------------------------------------
+  # CLOUDWATCH LOG GROUPS
+  # ---------------------------------------------------------------------------
+  
+  # Log Group for MCP Server container logs
+  MCPServerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/mcp-server'
+      RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
+      Tags:
+        - Key: Name
+          Value: /ecs/mcp-server
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Log Group for Agent container logs
+  AgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/agent'
+      RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
+      Tags:
+        - Key: Name
+          Value: /ecs/agent
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Log Group for UI container logs
+  UILogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/ui'
+      RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
+      Tags:
+        - Key: Name
+          Value: /ecs/ui
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Log Group for MCP Server Service Connect (Envoy proxy)
+  MCPServerServiceConnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/mcp-server-service-connect'
+      RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
+      Tags:
+        - Key: Name
+          Value: /ecs/mcp-server-service-connect
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Log Group for Agent Service Connect (Envoy proxy)
+  AgentServiceConnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/agent-service-connect'
+      RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
+      Tags:
+        - Key: Name
+          Value: /ecs/agent-service-connect
+        - Key: Project
+          Value: ECS-MCP-Blog
+        
+          
+
+  # Log Group for UI Service Connect (Envoy proxy)
+  UIServiceConnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/ui-service-connect'
+      RetentionInDays: 7
+      # KMS encryption for log data at rest
+      KmsKeyId: !GetAtt LogEncryptionKey.Arn
+      Tags:
+        - Key: Name
+          Value: /ecs/ui-service-connect
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # ---------------------------------------------------------------------------
+  # ECS TASK DEFINITIONS
+  # ---------------------------------------------------------------------------
+
+  # MCP Server Task Definition
+  MCPServerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-mcp-server'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt MCPServerTaskRole.Arn
+      ContainerDefinitions:
+        - Name: mcp-server
+          Image: !Sub '${MCPServerECRRepository.RepositoryUri}:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+              Name: mcp-port
+          Environment:
+            - Name: S3_BUCKET
+              Value: !Ref ProductCatalogBucket
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: CATALOG_FILE
+              Value: product-catalog.json
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref MCPServerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8080/health || exit 1
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-mcp-server'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # Agent Task Definition
+  AgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-agent'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt AgentTaskRole.Arn
+      ContainerDefinitions:
+        - Name: agent
+          Image: !Sub '${AgentECRRepository.RepositoryUri}:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+              Name: agent-port
+          Environment:
+            - Name: MCP_SERVER_ENDPOINT
+              Value: http://mcp-server:8080
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AgentLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:3000/health || exit 1
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-agent'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+  # UI Task Definition
+  UITaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-ui'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt UITaskRole.Arn
+      ContainerDefinitions:
+        - Name: ui
+          Image: !Sub '${UIECRRepository.RepositoryUri}:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 7860
+              Protocol: tcp
+              Name: ui-port
+          Environment:
+            - Name: AGENT_ENDPOINT
+              Value: http://agent:3000
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref UILogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ui'
+        - Key: Project
+          Value: ECS-MCP-Blog
+
+# =============================================================================
+# OUTPUTS
+# =============================================================================
+Outputs:
+  # Network
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+
+  PublicSubnetIds:
+    Description: Public Subnet IDs (comma-separated)
+    Value: !Join [',', [!Ref PublicSubnet1, !Ref PublicSubnet2]]
+
+  PrivateSubnetIds:
+    Description: Private Subnet IDs (comma-separated)
+    Value: !Join [',', [!Ref PrivateSubnet1, !Ref PrivateSubnet2]]
+
+  MCPServerSecurityGroupId:
+    Description: MCP Server Security Group ID
+    Value: !Ref MCPServerSecurityGroup
+
+  AgentSecurityGroupId:
+    Description: Agent Security Group ID
+    Value: !Ref AgentSecurityGroup
+
+  UISecurityGroupId:
+    Description: UI Security Group ID
+    Value: !Ref UISecurityGroup
+
+  # Compute
+  ECSClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref ECSCluster
+
+  # Storage
+  S3BucketName:
+    Description: S3 Bucket Name for Product Catalog
+    Value: !Ref ProductCatalogBucket
+
+  # Service Discovery
+  CloudMapNamespaceName:
+    Description: Cloud Map Namespace Name
+    Value: !Sub '${AWS::StackName}.local'
+
+  # Container Registry
+  MCPServerECRRepositoryUri:
+    Description: MCP Server ECR Repository URI
+    Value: !GetAtt MCPServerECRRepository.RepositoryUri
+
+  AgentECRRepositoryUri:
+    Description: Agent ECR Repository URI
+    Value: !GetAtt AgentECRRepository.RepositoryUri
+
+  UIECRRepositoryUri:
+    Description: UI ECR Repository URI
+    Value: !GetAtt UIECRRepository.RepositoryUri
+
+  # IAM
+  TaskExecutionRoleArn:
+    Description: ECS Task Execution Role ARN
+    Value: !GetAtt ECSTaskExecutionRole.Arn
+
+  ECSExpressInfrastructureRoleArn:
+    Description: ECS Express Infrastructure Role ARN
+    Value: !GetAtt ECSExpressInfrastructureRole.Arn
+
+  # Task Definitions
+  MCPServerTaskDefinitionArn:
+    Description: MCP Server Task Definition ARN
+    Value: !Ref MCPServerTaskDefinition
+
+  AgentTaskDefinitionArn:
+    Description: Agent Task Definition ARN
+    Value: !Ref AgentTaskDefinition
+
+  UITaskDefinitionArn:
+    Description: UI Task Definition ARN
+    Value: !Ref UITaskDefinition
+
+  UITaskRoleArn:
+    Description: UI Task Role ARN
+    Value: !GetAtt UITaskRole.Arn
+
+  UILogGroupName:
+    Description: UI CloudWatch Log Group Name
+    Value: !Ref UILogGroup

@@ -1,0 +1,552 @@
+{
+  "products": [
+    {
+      "id": "P001",
+      "name": "ProBook 15 Laptop",
+      "category": "Electronics",
+      "price": 899.99,
+      "in_stock": true,
+      "features": [
+        "15.6-inch Full HD display",
+        "Intel Core i7 processor",
+        "16GB RAM, 512GB SSD",
+        "Backlit keyboard",
+        "Fingerprint reader"
+      ]
+    },
+    {
+      "id": "P002",
+      "name": "SoundMax Wireless Headphones",
+      "category": "Electronics",
+      "price": 149.99,
+      "in_stock": true,
+      "features": [
+        "Active noise cancellation",
+        "40-hour battery life",
+        "Bluetooth 5.0",
+        "Foldable design with carrying case"
+      ]
+    },
+    {
+      "id": "P003",
+      "name": "UltraWide 34\" Curved Monitor",
+      "category": "Electronics",
+      "price": 549.99,
+      "in_stock": true,
+      "features": [
+        "3440x1440 resolution",
+        "144Hz refresh rate",
+        "HDR400 certified",
+        "USB-C connectivity"
+      ]
+    },
+    {
+      "id": "P004",
+      "name": "MechType Pro Keyboard",
+      "category": "Electronics",
+      "price": 89.99,
+      "in_stock": true,
+      "features": [
+        "Cherry MX Blue switches",
+        "RGB backlighting",
+        "Aluminum frame",
+        "Detachable USB-C cable"
+      ]
+    },
+    {
+      "id": "P005",
+      "name": "PrecisionGlide Wireless Mouse",
+      "category": "Electronics",
+      "price": 59.99,
+      "in_stock": false,
+      "features": [
+        "16000 DPI sensor",
+        "Ergonomic design",
+        "70-hour battery life",
+        "6 programmable buttons"
+      ]
+    },
+    {
+      "id": "P006",
+      "name": "SpeedRunner Pro Running Shoes",
+      "category": "Sports",
+      "price": 129.99,
+      "in_stock": true,
+      "features": [
+        "Lightweight mesh upper",
+        "Responsive foam cushioning",
+        "Carbon fiber plate",
+        "Reflective details for night runs"
+      ]
+    },
+    {
+      "id": "P007",
+      "name": "ZenFlow Yoga Mat",
+      "category": "Sports",
+      "price": 45.99,
+      "in_stock": true,
+      "features": [
+        "6mm thick cushioning",
+        "Non-slip surface",
+        "Eco-friendly TPE material",
+        "Carrying strap included",
+        "Alignment guide markings"
+      ]
+    },
+    {
+      "id": "P008",
+      "name": "IronGrip Adjustable Dumbbells",
+      "category": "Sports",
+      "price": 349.99,
+      "in_stock": true,
+      "features": [
+        "5-52.5 lbs adjustable weight",
+        "Quick-change dial system",
+        "Compact storage design"
+      ]
+    },
+    {
+      "id": "P009",
+      "name": "HydroMax Insulated Water Bottle",
+      "category": "Sports",
+      "price": 34.99,
+      "in_stock": true,
+      "features": [
+        "32oz capacity",
+        "24-hour cold retention",
+        "BPA-free stainless steel",
+        "Leak-proof lid"
+      ]
+    },
+    {
+      "id": "P010",
+      "name": "Classic Fit Cotton T-Shirt",
+      "category": "Clothing",
+      "price": 24.99,
+      "in_stock": true,
+      "features": [
+        "100% organic cotton",
+        "Pre-shrunk fabric",
+        "Available in 8 colors",
+        "Tagless comfort collar"
+      ]
+    },
+    {
+      "id": "P011",
+      "name": "SlimFlex Stretch Jeans",
+      "category": "Clothing",
+      "price": 79.99,
+      "in_stock": true,
+      "features": [
+        "4-way stretch denim",
+        "Slim fit design",
+        "Reinforced stitching",
+        "5 pocket styling"
+      ]
+    },
+    {
+      "id": "P012",
+      "name": "AllWeather Waterproof Jacket",
+      "category": "Clothing",
+      "price": 189.99,
+      "in_stock": false,
+      "features": [
+        "Waterproof breathable membrane",
+        "Sealed seams",
+        "Adjustable hood",
+        "Pit zips for ventilation"
+      ]
+    },
+    {
+      "id": "P013",
+      "name": "UrbanStep Casual Sneakers",
+      "category": "Clothing",
+      "price": 94.99,
+      "in_stock": true,
+      "features": [
+        "Memory foam insole",
+        "Canvas upper",
+        "Vulcanized rubber sole",
+        "Classic low-top design"
+      ]
+    },
+    {
+      "id": "P014",
+      "name": "TechElite Gaming Laptop",
+      "category": "Electronics",
+      "price": 1299.99,
+      "in_stock": true,
+      "features": [
+        "17.3-inch 240Hz display",
+        "NVIDIA RTX 4070 GPU",
+        "32GB RAM, 1TB NVMe SSD",
+        "Per-key RGB keyboard",
+        "Advanced cooling system"
+      ]
+    },
+    {
+      "id": "P015",
+      "name": "FitTrack Smart Watch",
+      "category": "Electronics",
+      "price": 249.99,
+      "in_stock": true,
+      "features": [
+        "Heart rate monitoring",
+        "GPS tracking",
+        "7-day battery life",
+        "Water resistant to 50m",
+        "Sleep tracking"
+      ]
+    },
+    {
+      "id": "P016",
+      "name": "PowerLift Resistance Bands Set",
+      "category": "Sports",
+      "price": 29.99,
+      "in_stock": true,
+      "features": [
+        "5 resistance levels",
+        "Door anchor included",
+        "Carrying bag",
+        "Exercise guide booklet"
+      ]
+    },
+    {
+      "id": "P017",
+      "name": "Premium Down Winter Jacket",
+      "category": "Clothing",
+      "price": 299.99,
+      "in_stock": false,
+      "features": [
+        "800-fill goose down",
+        "Water-resistant shell",
+        "Packable design",
+        "Rated to -20°F"
+      ]
+    },
+    {
+      "id": "P018",
+      "name": "CompactCam 4K Webcam",
+      "category": "Electronics",
+      "price": 79.99,
+      "in_stock": true,
+      "features": [
+        "4K Ultra HD resolution",
+        "Auto-focus",
+        "Built-in noise-canceling mic",
+        "Privacy shutter"
+      ]
+    },
+    {
+      "id": "P019",
+      "name": "BassWave Wireless Earbuds",
+      "category": "Electronics",
+      "price": 69.99,
+      "in_stock": true,
+      "features": [
+        "Deep bass wireless sound",
+        "Touch controls",
+        "IPX5 water resistant",
+        "28-hour total battery with case",
+        "Bluetooth 5.3"
+      ]
+    },
+    {
+      "id": "P020",
+      "name": "ClearTone Budget Wireless Headphones",
+      "category": "Electronics",
+      "price": 39.99,
+      "in_stock": true,
+      "features": [
+        "Wireless Bluetooth 5.0",
+        "Lightweight on-ear design",
+        "20-hour battery life",
+        "Built-in microphone",
+        "Foldable for travel"
+      ]
+    },
+    {
+      "id": "P021",
+      "name": "AeroSound Sport Wireless Headphones",
+      "category": "Electronics",
+      "price": 89.99,
+      "in_stock": true,
+      "features": [
+        "Sweat-proof wireless headphones",
+        "Secure ear-hook design",
+        "16-hour battery life",
+        "Ambient sound mode",
+        "Quick charge: 10 min = 2 hours"
+      ]
+    },
+    {
+      "id": "P022",
+      "name": "TrailBlazer Running Shoes",
+      "category": "Sports",
+      "price": 109.99,
+      "in_stock": true,
+      "features": [
+        "Trail-ready outsole grip",
+        "Waterproof mesh upper",
+        "Rock plate protection",
+        "Cushioned midsole",
+        "Reinforced toe cap"
+      ]
+    },
+    {
+      "id": "P023",
+      "name": "CloudStride Daily Running Shoes",
+      "category": "Sports",
+      "price": 84.99,
+      "in_stock": true,
+      "features": [
+        "Cloud-like cushioning",
+        "Breathable knit upper",
+        "Lightweight at 8.5 oz",
+        "Flexible rubber outsole",
+        "Wide toe box option available"
+      ]
+    },
+    {
+      "id": "P024",
+      "name": "RacePace Elite Running Shoes",
+      "category": "Sports",
+      "price": 159.99,
+      "in_stock": false,
+      "features": [
+        "Competition-grade carbon plate",
+        "Energy-return foam",
+        "Ultra-lightweight 6.8 oz",
+        "Aerodynamic heel shape",
+        "Marathon-tested durability"
+      ]
+    },
+    {
+      "id": "P025",
+      "name": "SwiftBook Air Laptop",
+      "category": "Electronics",
+      "price": 649.99,
+      "in_stock": true,
+      "features": [
+        "14-inch 2K IPS display",
+        "AMD Ryzen 5 processor",
+        "8GB RAM, 256GB SSD",
+        "Ultra-thin 2.8 lb design",
+        "12-hour battery life",
+        "USB-C charging"
+      ]
+    },
+    {
+      "id": "P026",
+      "name": "PowerStation Creator Laptop",
+      "category": "Electronics",
+      "price": 1799.99,
+      "in_stock": true,
+      "features": [
+        "16-inch 4K OLED display",
+        "Intel Core i9 processor",
+        "64GB RAM, 2TB NVMe SSD",
+        "NVIDIA RTX 4080 GPU",
+        "Thunderbolt 4 ports",
+        "Color-calibrated for creative work"
+      ]
+    },
+    {
+      "id": "P027",
+      "name": "EduBook Student Laptop",
+      "category": "Electronics",
+      "price": 399.99,
+      "in_stock": true,
+      "features": [
+        "13.3-inch HD display",
+        "Intel Core i3 processor",
+        "8GB RAM, 128GB SSD",
+        "10-hour battery life",
+        "Spill-resistant keyboard",
+        "Lightweight 3.1 lbs"
+      ]
+    },
+    {
+      "id": "P028",
+      "name": "GripFlow Hot Yoga Mat",
+      "category": "Sports",
+      "price": 68.99,
+      "in_stock": true,
+      "features": [
+        "Microfiber top layer for hot yoga",
+        "Superior wet-grip surface",
+        "5mm natural rubber base",
+        "Machine washable",
+        "Anti-odor treatment"
+      ]
+    },
+    {
+      "id": "P029",
+      "name": "TravelZen Foldable Yoga Mat",
+      "category": "Sports",
+      "price": 32.99,
+      "in_stock": true,
+      "features": [
+        "Foldable thin design for travel",
+        "4mm lightweight construction",
+        "Non-slip dual texture",
+        "Fits in carry-on luggage",
+        "Includes mesh carry bag"
+      ]
+    },
+    {
+      "id": "P030",
+      "name": "ProBalance Cork Yoga Mat",
+      "category": "Sports",
+      "price": 79.99,
+      "in_stock": false,
+      "features": [
+        "Natural cork surface",
+        "Antimicrobial and self-cleaning",
+        "6mm thick natural rubber base",
+        "Grip improves with moisture",
+        "Eco-friendly and sustainable"
+      ]
+    },
+    {
+      "id": "P031",
+      "name": "NovaBeat Wireless Over-Ear Headphones",
+      "category": "Electronics",
+      "price": 94.99,
+      "in_stock": true,
+      "features": [
+        "Hi-Res wireless audio",
+        "Plush memory foam ear cups",
+        "35-hour battery life",
+        "Multi-device pairing",
+        "Detachable boom microphone"
+      ]
+    },
+    {
+      "id": "P032",
+      "name": "PixelPro 27\" 4K Monitor",
+      "category": "Electronics",
+      "price": 699.99,
+      "in_stock": true,
+      "features": [
+        "3840x2160 4K resolution",
+        "IPS panel with 99% sRGB",
+        "USB-C with 65W power delivery",
+        "Height-adjustable stand",
+        "Built-in KVM switch"
+      ]
+    },
+    {
+      "id": "P033",
+      "name": "FlexRun Beginner Running Shoes",
+      "category": "Sports",
+      "price": 59.99,
+      "in_stock": true,
+      "features": [
+        "Supportive cushioning for new runners",
+        "Breathable mesh upper",
+        "Durable rubber outsole",
+        "Padded ankle collar",
+        "Available in 6 colors"
+      ]
+    },
+    {
+      "id": "P034",
+      "name": "SmartDesk Standing Desk Converter",
+      "category": "Electronics",
+      "price": 279.99,
+      "in_stock": true,
+      "features": [
+        "Gas spring lift mechanism",
+        "32-inch wide platform",
+        "Keyboard tray included",
+        "Adjustable height 6-17 inches",
+        "Supports up to 35 lbs"
+      ]
+    },
+    {
+      "id": "P035",
+      "name": "SonicPods Mini Wireless Headphones",
+      "category": "Electronics",
+      "price": 49.99,
+      "in_stock": true,
+      "features": [
+        "Ultra-compact wireless earbuds",
+        "Passive noise isolation",
+        "18-hour battery with case",
+        "IPX4 splash proof",
+        "One-touch voice assistant"
+      ]
+    },
+    {
+      "id": "P036",
+      "name": "EnduroTrail Running Shoes",
+      "category": "Sports",
+      "price": 139.99,
+      "in_stock": true,
+      "features": [
+        "Aggressive lug pattern for trails",
+        "Gore-Tex waterproof lining",
+        "Vibram Megagrip outsole",
+        "Protective toe bumper",
+        "Gaiter attachment points"
+      ]
+    },
+    {
+      "id": "P037",
+      "name": "ZenStudio Thick Yoga Mat",
+      "category": "Sports",
+      "price": 54.99,
+      "in_stock": true,
+      "features": [
+        "Extra thick 8mm cushioning",
+        "Joint-friendly for sensitive knees",
+        "Double-sided non-slip texture",
+        "Free from latex and PVC",
+        "Includes yoga strap"
+      ]
+    },
+    {
+      "id": "P038",
+      "name": "StreamLine USB-C Hub",
+      "category": "Electronics",
+      "price": 54.99,
+      "in_stock": true,
+      "features": [
+        "7-in-1 USB-C hub",
+        "4K HDMI output",
+        "100W pass-through charging",
+        "SD and microSD card readers",
+        "Gigabit Ethernet port"
+      ]
+    },
+    {
+      "id": "P039",
+      "name": "ActivePulse Fitness Tracker",
+      "category": "Electronics",
+      "price": 59.99,
+      "in_stock": true,
+      "features": [
+        "AMOLED color display",
+        "Heart rate and SpO2 monitoring",
+        "14-day battery life",
+        "Sleep and stress tracking",
+        "Water resistant to 50m"
+      ]
+    },
+    {
+      "id": "P040",
+      "name": "ComfortStride Walking Shoes",
+      "category": "Sports",
+      "price": 74.99,
+      "in_stock": true,
+      "features": [
+        "Arch support technology",
+        "Slip-on design with elastic laces",
+        "Orthopedic-grade insole",
+        "Lightweight EVA midsole",
+        "Non-marking rubber outsole"
+      ]
+    }
+  ]
+}
