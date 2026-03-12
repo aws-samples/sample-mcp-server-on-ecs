@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Generated configs (created at runtime)
+config/*.json
+
+# Logs
+*.log
+scan-report.json
+
+
+.agents/summary/.last_commit
