@@ -1,5 +1,5 @@
 # Gradio UI Dependencies
-gradio>=5.0.0,<6.0.0
+gradio>=6.7.0,<7.0.0
 requests>=2.32.0,<3.0.0
 fastapi>=0.115.0,<1.0.0
 uvicorn>=0.32.0,<1.0.0
