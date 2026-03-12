@@ -19,3 +19,6 @@ config/*.json
 # Logs
 *.log
 scan-report.json
+
+
+.agents/summary/.last_commit
