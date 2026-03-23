@@ -11,9 +11,9 @@ This project demonstrates how to deploy Model Context Protocol (MCP) servers on 
 1. A user submits a natural language query (e.g., "Find laptops under $1000") through the **Gradio UI**, which is exposed to the internet via an Application Load Balancer provisioned by **Amazon ECS Express Mode**.
 2. The UI forwards the request over **Amazon ECS Service Connect** to the **Agent Service** running in a private subnet.
 3. The Agent invokes **Amazon Bedrock** (Nova Lite model) to interpret the query and determine which MCP tools to call.
-4. The Agent connects to the **MCP Server** over **Amazon ECS Service Connect** using the SSE transport protocol.
+4. The Agent connects to the **MCP Server** over **Amazon ECS Service Connect** using the SSE (Server-Sent Events) transport protocol.
 5. The MCP Server executes the tool call — searching, filtering, or retrieving product data from an **Amazon S3** bucket.
-6. Results flow back through the chain: MCP Server → Agent → UI → User.
+6. The MCP Server returns results through the chain: MCP Server → Agent → UI → User.
 
 All inter-service communication stays within the Amazon VPC. Only the UI service is publicly accessible.
 
@@ -57,6 +57,8 @@ All inter-service communication stays within the Amazon VPC. Only the UI service
 ├── sample-data/
 │   └── product-catalog.json     # Sample product data
 ├── scripts/
+│   ├── setup-env.sh             # Export CloudFormation outputs as env vars
+│   ├── generate-service-connect-configs.sh  # Generate Service Connect configs
 │   └── cleanup.sh               # Resource cleanup script
 └── docs/
     └── TROUBLESHOOTING.md       # Common issues and solutions
@@ -118,41 +120,13 @@ aws cloudformation describe-stacks \
 
 ### Step 3: Get Stack Outputs
 
-The remaining steps reference resource IDs and ARNs that AWS CloudFormation created — subnet IDs, security group IDs, IAM role ARNs, and Amazon ECR repository URIs. Rather than looking these up manually in the console, you retrieve all stack outputs in a single API call and export them as environment variables. This keeps every subsequent command portable and copy-paste ready.
+Run the provided setup script to export all CloudFormation stack outputs as environment variables. These variables are referenced in subsequent steps to deploy and configure the Amazon ECS services.
 
 ```bash
-# Get AWS Account ID
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile $AWS_PROFILE)
-export ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-
-# Get all AWS CloudFormation outputs in one call
-OUTPUTS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --profile $AWS_PROFILE --query 'Stacks[0].Outputs')
-
-# Parse outputs into environment variables
-export CLUSTER_NAME=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ECSClusterName") | .OutputValue')
-export S3_BUCKET=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="S3BucketName") | .OutputValue')
-export PRIVATE_SUBNETS=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="PrivateSubnetIds") | .OutputValue')
-export PUBLIC_SUBNETS=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="PublicSubnetIds") | .OutputValue')
-export MCP_SG=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="MCPServerSecurityGroupId") | .OutputValue')
-export AGENT_SG=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="AgentSecurityGroupId") | .OutputValue')
-export UI_SG=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UISecurityGroupId") | .OutputValue')
-export EXECUTION_ROLE=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="TaskExecutionRoleArn") | .OutputValue')
-export INFRA_ROLE=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="ECSExpressInfrastructureRoleArn") | .OutputValue')
-export UI_TASK_ROLE=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UITaskRoleArn") | .OutputValue')
-export UI_ECR=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UIECRRepositoryUri") | .OutputValue')
-export UI_LOG_GROUP=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="UILogGroupName") | .OutputValue')
-export VPC_ID=$(echo $OUTPUTS | jq -r '.[] | select(.OutputKey=="VpcId") | .OutputValue')
-
-# Verify key outputs — all values should be non-empty
-echo "Cluster:    $CLUSTER_NAME"
-echo "S3 Bucket:  $S3_BUCKET"
-echo "ECR:        $ECR_REGISTRY"
-echo "Priv Subs:  $PRIVATE_SUBNETS"
-echo "Pub Subs:   $PUBLIC_SUBNETS"
-echo "Infra Role: $INFRA_ROLE"
+source scripts/setup-env.sh
 ```
 
-> If any value shows `null` or is empty, the stack may not have completed successfully. Re-run the validation in Step 2.
+You should see output confirming all variables are set. If any value shows empty or you see an error, verify the stack completed successfully in Step 2.
 
 ### Step 4: Login to Amazon ECR
 
@@ -219,72 +193,13 @@ done
 
 Amazon ECS Service Connect uses [AWS Cloud Map](https://docs.aws.amazon.com/cloud-map/latest/dg/what-is-cloud-map.html) for service discovery and an [Envoy](https://www.envoyproxy.io/) sidecar proxy for traffic routing. Each service needs a JSON configuration that defines its discovery name, port mapping, and log destination. The MCP Server and Agent register themselves as discoverable endpoints so other services can reach them by name (for example, `http://mcp-server:8080`). The UI is a client-only consumer — it doesn't register itself but needs the Envoy sidecar to resolve the Agent's address.
 
+Run the following script to generate the Service Connect configuration files for all three services:
+
 ```bash
-mkdir -p config
-
-# MCP Server Service Connect
-cat > config/${STACK_NAME}-mcp-server-service-connect.json << EOF
-{
-  "enabled": true,
-  "namespace": "${STACK_NAME}.local",
-  "services": [
-    {
-      "portName": "mcp-port",
-      "discoveryName": "mcp-server",
-      "clientAliases": [{"port": 8080, "dnsName": "mcp-server"}]
-    }
-  ],
-  "logConfiguration": {
-    "logDriver": "awslogs",
-    "options": {
-      "awslogs-group": "/ecs/${STACK_NAME}/mcp-server-service-connect",
-      "awslogs-region": "${AWS_REGION}",
-      "awslogs-stream-prefix": "envoy"
-    }
-  }
-}
-EOF
-
-# Agent Service Connect
-cat > config/${STACK_NAME}-agent-service-connect.json << EOF
-{
-  "enabled": true,
-  "namespace": "${STACK_NAME}.local",
-  "services": [
-    {
-      "portName": "agent-port",
-      "discoveryName": "agent",
-      "clientAliases": [{"port": 3000, "dnsName": "agent"}]
-    }
-  ],
-  "logConfiguration": {
-    "logDriver": "awslogs",
-    "options": {
-      "awslogs-group": "/ecs/${STACK_NAME}/agent-service-connect",
-      "awslogs-region": "${AWS_REGION}",
-      "awslogs-stream-prefix": "envoy"
-    }
-  }
-}
-EOF
-
-# UI Service Connect
-cat > config/${STACK_NAME}-ui-service-connect.json << EOF
-{
-  "enabled": true,
-  "namespace": "${STACK_NAME}.local",
-  "services": [],
-  "logConfiguration": {
-    "logDriver": "awslogs",
-    "options": {
-      "awslogs-group": "/ecs/${STACK_NAME}/ui-service-connect",
-      "awslogs-region": "${AWS_REGION}",
-      "awslogs-stream-prefix": "envoy"
-    }
-  }
-}
-EOF
+./scripts/generate-service-connect-configs.sh
 ```
+
+You should see output listing the three generated config files in `config/`.
 
 ### Step 8: Deploy Amazon ECS Services
 
@@ -494,7 +409,7 @@ aws logs tail /ecs/${STACK_NAME}/mcp-server --since 10m \
 The cleanup script removes all resources in the correct order: Amazon ECS services, Express Mode resources, Amazon S3 buckets, Amazon ECR repositories, the AWS CloudFormation stack, and retained log groups.
 
 ```bash
-# Ensure your deployment variables are set
+# Verify your deployment variables are set
 export STACK_NAME=ecs-mcp-blog
 export AWS_REGION=us-west-2
 export AWS_PROFILE=default
