@@ -11,7 +11,7 @@ This project demonstrates how to deploy Model Context Protocol (MCP) servers on 
 1. A user submits a natural language query (e.g., "Find laptops under $1000") through the **Gradio UI**, which is exposed to the internet via an Application Load Balancer provisioned by **Amazon ECS Express Mode**.
 2. The UI forwards the request over **Amazon ECS Service Connect** to the **Agent Service** running in a private subnet.
 3. The Agent invokes **Amazon Bedrock** (Nova Lite model) to interpret the query and determine which MCP tools to call.
-4. The Agent connects to the **MCP Server** over **Amazon ECS Service Connect** using the SSE (Server-Sent Events) transport protocol.
+4. The Agent connects to the **MCP Server** over **Amazon ECS Service Connect** using the Streamable HTTP transport.
 5. The MCP Server executes the tool call — searching, filtering, or retrieving product data from an **Amazon S3** bucket.
 6. The MCP Server returns results through the chain: MCP Server → Agent → UI → User.
 
@@ -23,7 +23,7 @@ All inter-service communication stays within the Amazon VPC. Only the UI service
 | -------------------- | ------------------------------- | -------------------------------------------------- |
 | **UI Service**       | Gradio on Amazon ECS            | Web chat interface, public-facing via ALB          |
 | **Agent Service**    | Strands Agents + Amazon Bedrock | Orchestrates AI reasoning and MCP tool calls       |
-| **MCP Server**       | FastMCP on Amazon ECS           | Exposes product catalog as MCP tools over SSE      |
+| **MCP Server**       | FastMCP on Amazon ECS           | Exposes product catalog as MCP tools over Streamable HTTP      |
 | **Service Connect**  | AWS Cloud Map + Envoy proxy     | Service-to-service discovery and routing           |
 | **ECS Express Mode** | Managed ALB + auto-scaling      | Automated public endpoint with HTTPS               |
 | **Product Catalog**  | Amazon S3                       | Stores product data as JSON                        |
@@ -35,6 +35,7 @@ All inter-service communication stays within the Amazon VPC. Only the UI service
 - **Docker ≥ 20.10** with buildx support — run `docker --version` to check
 - **Git** — to clone the repository
 - **jq** — run `jq --version` to check
+- **Bash shell** — macOS/Linux terminal or [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) on Windows
 - **Amazon Bedrock model access** — enable the Amazon Nova Lite model in your AWS account via the [Amazon Bedrock console](https://console.aws.amazon.com/bedrock/home#/modelaccess)
 
 ## Directory Structure
@@ -212,7 +213,7 @@ aws ecs create-service \
   --cluster $CLUSTER_NAME \
   --service-name mcp-server-service \
   --task-definition ${STACK_NAME}-mcp-server \
-  --desired-count 1 \
+  --desired-count 2 \
   --launch-type FARGATE \
   --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNETS],securityGroups=[$MCP_SG],assignPublicIp=DISABLED}" \
   --service-connect-configuration file://config/${STACK_NAME}-mcp-server-service-connect.json \
@@ -354,7 +355,7 @@ All three services should show `ACTIVE` with `runningCount` matching `desiredCou
 --------------------------------------------
 |             DescribeServices             |
 +---------------------+---------+----+-----+
-|  mcp-server-service |  ACTIVE |  1 |  1  |
+|  mcp-server-service |  ACTIVE |  2 |  2  |
 |  agent-service      |  ACTIVE |  1 |  1  |
 |  ui-service         |  ACTIVE |  1 |  1  |
 +---------------------+---------+----+-----+

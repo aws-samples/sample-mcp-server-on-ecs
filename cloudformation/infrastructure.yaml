@@ -12,7 +12,6 @@ Description: >
 # - S3 TLS Enforcement: Bucket policy denying non-HTTPS requests
 # - S3 Access Logging: Dedicated logging bucket for audit trail
 # - S3 Versioning: Enabled on all S3 buckets for data protection
-# - ECR Immutable Tags: Prevents overwriting published container images
 # - IAM Least Privilege: Scoped IAM policies per service role
 # - Network Isolation: VPC with private subnets, security groups per service
 # - Container Insights: ECS cluster monitoring enabled
@@ -530,8 +529,7 @@ Resources:
       EncryptionConfiguration:
         EncryptionType: KMS
         KmsKey: !GetAtt LogEncryptionKey.Arn
-      # Immutable tags prevent overwriting published images
-      ImageTagMutability: IMMUTABLE
+      ImageTagMutability: MUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:
@@ -569,8 +567,7 @@ Resources:
       EncryptionConfiguration:
         EncryptionType: KMS
         KmsKey: !GetAtt LogEncryptionKey.Arn
-      # Immutable tags prevent overwriting published images
-      ImageTagMutability: IMMUTABLE
+      ImageTagMutability: MUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:
@@ -608,8 +605,7 @@ Resources:
       EncryptionConfiguration:
         EncryptionType: KMS
         KmsKey: !GetAtt LogEncryptionKey.Arn
-      # Immutable tags prevent overwriting published images
-      ImageTagMutability: IMMUTABLE
+      ImageTagMutability: MUTABLE
       ImageScanningConfiguration:
         ScanOnPush: true
       LifecyclePolicy:

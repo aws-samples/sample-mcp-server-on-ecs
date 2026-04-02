@@ -54,9 +54,9 @@ Reset conversation history.
 
 ---
 
-### MCP Server Tools (via SSE)
+### MCP Server Tools (via Streamable HTTP)
 
-**SSE Endpoint**: `http://mcp-server:8080/sse`
+**Streamable HTTP Endpoint**: `http://mcp-server:8080/mcp/`
 
 #### search_products
 ```json

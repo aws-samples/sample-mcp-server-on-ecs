@@ -12,7 +12,7 @@
 |-------|------------|---------|
 | Frontend | Gradio | Web chat interface |
 | Agent | Strands Agents + Flask | AI orchestration with Amazon Bedrock |
-| Backend | FastMCP | MCP server with SSE transport |
+| Backend | FastMCP | MCP server with Streamable HTTP transport |
 | AI Model | Amazon Bedrock (Nova Lite) | Natural language processing |
 | Infrastructure | AWS ECS Fargate | Container orchestration |
 | Networking | ECS Service Connect | Service-to-service communication |
@@ -53,7 +53,7 @@ aws-mcp-ecs-blog/
 |---------|------|----------|
 | UI | 7860 | HTTP |
 | Agent | 3000 | HTTP/REST |
-| MCP Server | 8080 | HTTP/SSE |
+| MCP Server | 8080 | HTTP |
 
 ## Dependencies
 

@@ -11,7 +11,7 @@ import uuid
 from typing import Optional
 
 from flask import Flask, request, jsonify
-from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamablehttp_client
 from strands import Agent
 from strands.models import BedrockModel
 from strands.tools.mcp import MCPClient
@@ -51,10 +51,10 @@ available_tools: list = []  # Cache of available MCP tools
 # MCP CLIENT SETUP
 # =============================================================================
 def create_mcp_client() -> MCPClient:
-    """Create MCP client with SSE transport for the product catalog server."""
-    sse_url = f"{MCP_SERVER_ENDPOINT}/sse"
-    logger.info(f"Creating MCP client for: {sse_url}")
-    return MCPClient(lambda: sse_client(sse_url))
+    """Create MCP client with Streamable HTTP transport for the product catalog server."""
+    mcp_url = f"{MCP_SERVER_ENDPOINT}/mcp/"
+    logger.info(f"Creating MCP client for: {mcp_url}")
+    return MCPClient(lambda: streamablehttp_client(mcp_url))
 
 
 # =============================================================================
@@ -238,8 +238,6 @@ def health():
     return jsonify({
         "status": status,
         "mcp_server_connected": mcp_connected,
-        "mcp_server_endpoint": MCP_SERVER_ENDPOINT,
-        "bedrock_model": BEDROCK_MODEL_ID,
         "bedrock_accessible": bedrock_accessible,
         "tools_available": tools_available
     })

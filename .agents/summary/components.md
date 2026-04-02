@@ -27,7 +27,7 @@ classDiagram
     }
     
     UIService --> AgentService : HTTP POST /chat
-    AgentService --> MCPServer : MCP SSE
+    AgentService --> MCPServer : MCP Streamable HTTP
 ```
 
 ## UI Service (`ui/app.py`)
@@ -65,7 +65,7 @@ classDiagram
 **Key Functions**:
 | Function | Description |
 |----------|-------------|
-| `create_mcp_client()` | Creates SSE client for MCP Server |
+| `create_mcp_client()` | Creates Streamable HTTP client for MCP Server |
 | `create_agent(mcp_client, conversation_id)` | Configures Strands Agent with Bedrock model |
 
 **Configuration**:
@@ -79,7 +79,7 @@ classDiagram
 
 **Purpose**: Product catalog access via MCP protocol
 
-**Technology**: FastMCP with SSE transport
+**Technology**: FastMCP with Streamable HTTP transport
 
 **MCP Tools**:
 | Tool | Parameters | Description |
@@ -92,7 +92,7 @@ classDiagram
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check with catalog status |
-| `/sse` | GET | MCP SSE transport endpoint |
+| `/mcp/` | POST | MCP Streamable HTTP transport endpoint |
 
 **Key Functions**:
 | Function | Description |

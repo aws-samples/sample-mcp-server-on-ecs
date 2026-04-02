@@ -21,6 +21,10 @@ logging.basicConfig(
 logger = logging.getLogger('gradio-ui')
 
 
+# Per-session conversation ID for multi-turn context
+_conversation_id = str(uuid.uuid4())
+
+
 def chat(message: str, history: list) -> str:
     """
     Send message to Strands Agent and return response.
@@ -43,7 +47,7 @@ def chat(message: str, history: list) -> str:
             f"{AGENT_ENDPOINT}/chat",
             json={
                 "message": message,
-                "conversation_id": str(uuid.uuid4())
+                "conversation_id": _conversation_id
             },
             timeout=60,
             headers={'Content-Type': 'application/json'}

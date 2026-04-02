@@ -102,15 +102,11 @@ mcp = FastMCP("Product Catalog MCP Server")
 @mcp.custom_route("/health", methods=["GET"])
 async def health_endpoint(request):
     """HTTP health check endpoint for ECS/Docker health checks."""
-    status = {
+    return JSONResponse({
         "status": "healthy",
         "catalog_loaded": catalog_cache["loaded"],
-        "product_count": len(catalog_cache["products"]),
-        "last_refresh": catalog_cache["last_refresh"],
-        "s3_bucket": S3_BUCKET,
-        "catalog_file": CATALOG_FILE
-    }
-    return JSONResponse(status)
+        "product_count": len(catalog_cache["products"])
+    })
 
 # =============================================================================
 # MCP TOOLS
@@ -250,8 +246,8 @@ def main():
     # Pre-load catalog on startup
     load_catalog_from_s3()
     
-    # Run the MCP server with SSE transport
-    mcp.run(transport="sse", host=HOST, port=PORT)
+    # Run the MCP server with Streamable HTTP transport (stateless)
+    mcp.run(transport="streamable-http", host=HOST, port=PORT, stateless_http=True)
 
 
 if __name__ == "__main__":

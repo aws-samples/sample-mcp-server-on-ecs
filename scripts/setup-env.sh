@@ -3,8 +3,9 @@
 # Usage: source scripts/setup-env.sh
 
 # Verify required variables
+check_var() { eval "[ -n \"\${$1}\" ]"; }
 for var in STACK_NAME AWS_REGION AWS_PROFILE; do
-    if [ -z "${!var}" ]; then
+    if ! check_var "$var"; then
         echo "ERROR: $var is not set. Run: export $var=<value>"
         return 1 2>/dev/null || exit 1
     fi

@@ -53,7 +53,7 @@ sequenceDiagram
     UI->>A: POST /chat {message}
     A->>B: InvokeModel (Nova Lite)
     B-->>A: Tool call decision
-    A->>M: MCP tool request (SSE)
+    A->>M: MCP tool request (Streamable HTTP)
     M->>S3: GetObject (catalog)
     S3-->>M: Product data
     M-->>A: Tool response
@@ -76,7 +76,7 @@ sequenceDiagram
 - Traffic stays within VPC for security
 
 ### MCP Protocol
-- Server-Sent Events (SSE) transport for real-time communication
+- Streamable HTTP transport for stateless request/response communication
 - Tool-based abstraction for data operations
 - Stateless request handling with in-memory catalog cache
 
